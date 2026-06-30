@@ -1,0 +1,10 @@
+node_modules/
+dist/
+media/webview.js
+media/webview.js.map
+media/webview.css
+media/webview.css.map
+*.vsix
+
+# Full-fidelity sidecars generated next to notes during testing
+*.blocks.json

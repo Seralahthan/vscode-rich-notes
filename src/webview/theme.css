@@ -1,0 +1,77 @@
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
+}
+
+/* Let the editor fill the pane and give comfortable page-like margins. */
+.bn-container,
+.bn-editor {
+  height: 100%;
+}
+
+.bn-editor {
+  padding-top: 24px;
+  max-width: 820px;
+  margin: 0 auto;
+}
+
+/* Map BlockNote's surfaces onto the active VS Code theme. */
+.bn-container {
+  --bn-colors-editor-background: var(--vscode-editor-background);
+  --bn-colors-editor-text: var(--vscode-editor-foreground);
+  --bn-colors-menu-background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
+  --bn-colors-menu-text: var(--vscode-menu-foreground, var(--vscode-editor-foreground));
+  --bn-colors-tooltip-background: var(--vscode-editorWidget-background);
+  --bn-colors-tooltip-text: var(--vscode-editor-foreground);
+  --bn-colors-hovered-background: var(--vscode-list-hoverBackground);
+  --bn-colors-selected-background: var(--vscode-list-activeSelectionBackground);
+  --bn-colors-selected-text: var(--vscode-list-activeSelectionForeground);
+  --bn-colors-border: var(--vscode-widget-border, var(--vscode-editorWidget-border));
+}
+
+/*
+ * Nested list items should read as indented sub-bullets (Notion-style), not as
+ * the quote-like vertical bar BlockNote draws for nested blocks. We keep that
+ * bar for nested paragraphs, but remove it when the nested block is a list item.
+ */
+.bn-block-group
+  .bn-block-group
+  .bn-block-outer:not([data-prev-depth-changed]):has(> .bn-block > .bn-block-content[data-content-type="bulletListItem"])::before,
+.bn-block-group
+  .bn-block-group
+  .bn-block-outer:not([data-prev-depth-changed]):has(> .bn-block > .bn-block-content[data-content-type="numberedListItem"])::before,
+.bn-block-group
+  .bn-block-group
+  .bn-block-outer:not([data-prev-depth-changed]):has(> .bn-block > .bn-block-content[data-content-type="checkListItem"])::before {
+  border-left: none;
+}
+
+/*
+ * Blockquotes: a single transparent left-bar look. BlockNote's Mantine theme
+ * styles the inner <blockquote> like a filled card (background + its own border
+ * + a decorative quote icon); we strip all of that and draw exactly one bar.
+ */
+[data-content-type="quote"],
+[data-content-type="quote"] blockquote {
+  background: transparent !important;
+}
+[data-content-type="quote"] blockquote {
+  border: none !important;
+  border-inline-start: none !important;
+  border-left: 3px solid
+    var(--vscode-textBlockQuote-border, var(--vscode-textSeparator-foreground, #6a737d)) !important;
+  margin: 0 !important;
+  padding: 0 0 0 1em !important;
+  color: var(--vscode-editor-foreground);
+  font-style: italic;
+}
+[data-content-type="quote"] blockquote::before,
+[data-content-type="quote"] blockquote::after {
+  content: none !important;
+  display: none !important;
+}

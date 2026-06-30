@@ -1,0 +1,93 @@
+{
+  "name": "vscode-rich-notes",
+  "displayName": "Rich Notes",
+  "description": "A Notion-style rich-text editor for markdown notes in VS Code.",
+  "version": "0.2.0",
+  "publisher": "rich-notes",
+  "license": "MIT",
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Seralahthan/vscode-rich-notes"
+  },
+  "bugs": {
+    "url": "https://github.com/Seralahthan/vscode-rich-notes/issues"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Notebooks"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "richNotes.editor",
+        "displayName": "Rich Notes (rich text)",
+        "selector": [
+          {
+            "filenamePattern": "*.md"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
+    "commands": [
+      {
+        "command": "richNotes.openWith",
+        "title": "Rich Notes: Open as rich text"
+      },
+      {
+        "command": "richNotes.newNote",
+        "title": "Rich Notes: New note"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "richNotes.openWith",
+          "when": "resourceExtname == .md",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "richNotes.openWith",
+          "when": "resourceExtname == .md",
+          "group": "navigation@1"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "richNotes.openWith",
+          "when": "resourceExtname == .md",
+          "group": "1_open"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "esbuild:ext": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "esbuild:web": "esbuild src/webview/index.tsx --bundle --outfile=media/webview.js --format=iife --jsx=automatic --conditions=style --loader:.woff=dataurl --loader:.woff2=dataurl --loader:.ttf=dataurl --define:process.env.NODE_ENV=\\\"production\\\"",
+    "compile": "npm run esbuild:ext -- --sourcemap && npm run esbuild:web -- --sourcemap",
+    "watch": "npm run esbuild:ext -- --sourcemap --watch & npm run esbuild:web -- --sourcemap --watch",
+    "vscode:prepublish": "npm run esbuild:ext -- --minify && npm run esbuild:web -- --minify"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.21.0",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "@blocknote/core": "^0.47.0",
+    "@blocknote/mantine": "^0.47.0",
+    "@blocknote/react": "^0.47.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}
