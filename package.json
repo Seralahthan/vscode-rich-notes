@@ -2,7 +2,7 @@
   "name": "vscode-rich-notes",
   "displayName": "Rich Notes",
   "description": "A Notion-style rich-text editor for markdown notes in VS Code.",
-  "version": "0.2.0",
+  "version": "0.3.4",
   "publisher": "rich-notes",
   "license": "MIT",
   "icon": "icon.png",
@@ -21,6 +21,9 @@
     "Notebooks"
   ],
   "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "contributes": {
     "customEditors": [
       {
@@ -40,16 +43,140 @@
         "title": "Rich Notes: Open as rich text"
       },
       {
+        "command": "richNotes.openSource",
+        "title": "Rich Notes: Open markdown source"
+      },
+      {
         "command": "richNotes.newNote",
         "title": "Rich Notes: New note"
+      },
+      {
+        "command": "richNotes.syncToNotion",
+        "title": "Rich Notes: Sync to Notion"
+      },
+      {
+        "command": "richNotes.unlinkFromNotion",
+        "title": "Rich Notes: Unlink from Notion"
+      },
+      {
+        "command": "richNotes.syncNow",
+        "title": "Rich Notes: Sync now (push/pull/resolve)"
+      },
+      {
+        "command": "richNotes.pullFromNotion",
+        "title": "Rich Notes: Pull from Notion (replace local)"
+      },
+      {
+        "command": "richNotes.pushToNotion",
+        "title": "Rich Notes: Push to Notion (replace remote)"
+      },
+      {
+        "command": "richNotes.syncStatus",
+        "title": "Rich Notes: Sync status (diagnostic)"
+      },
+      {
+        "command": "richNotes.resolveKeepLocal",
+        "title": "Keep local (push to Notion)",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "richNotes.resolveKeepRemote",
+        "title": "Keep remote (overwrite local)",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "richNotes.resolveMergePush",
+        "title": "Merge & push (use edited local)",
+        "icon": "$(git-merge)"
+      },
+      {
+        "command": "richNotes.resolveCancel",
+        "title": "Cancel conflict resolution",
+        "icon": "$(close)"
+      },
+      {
+        "command": "richNotes.setNotionToken",
+        "title": "Rich Notes: Set Notion token"
+      },
+      {
+        "command": "richNotes.clearNotionToken",
+        "title": "Rich Notes: Clear Notion token"
       }
     ],
+    "configuration": {
+      "title": "Rich Notes",
+      "properties": {
+        "richNotes.notion.parentPageId": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "The Notion page id under which new synced notes are created. Open the parent page in Notion, share it with your integration, and copy the 32-character id from its URL."
+        },
+        "richNotes.autoSave": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Automatically save notes opened in the Rich Notes editor shortly after you stop typing."
+        },
+        "richNotes.autoSaveDelay": {
+          "type": "number",
+          "default": 1000,
+          "markdownDescription": "Delay in milliseconds before auto-saving a note after the last edit."
+        },
+        "richNotes.notion.autoSync": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Automatically push a note to Notion when it is saved, if it is already linked to a Notion page."
+        }
+      }
+    },
     "menus": {
       "editor/title": [
         {
           "command": "richNotes.openWith",
-          "when": "resourceExtname == .md",
+          "when": "resourceExtname == .md && activeCustomEditorId != richNotes.editor && !richNotes.conflictActive",
           "group": "navigation"
+        },
+        {
+          "command": "richNotes.openSource",
+          "when": "resourceExtname == .md && activeCustomEditorId == richNotes.editor",
+          "group": "navigation"
+        },
+        {
+          "command": "richNotes.resolveKeepLocal",
+          "when": "richNotes.conflictActive",
+          "group": "navigation@1"
+        },
+        {
+          "command": "richNotes.resolveKeepRemote",
+          "when": "richNotes.conflictActive",
+          "group": "navigation@2"
+        },
+        {
+          "command": "richNotes.resolveMergePush",
+          "when": "richNotes.conflictActive",
+          "group": "navigation@3"
+        },
+        {
+          "command": "richNotes.resolveCancel",
+          "when": "richNotes.conflictActive",
+          "group": "navigation@4"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "richNotes.resolveKeepLocal",
+          "when": "false"
+        },
+        {
+          "command": "richNotes.resolveKeepRemote",
+          "when": "false"
+        },
+        {
+          "command": "richNotes.resolveMergePush",
+          "when": "false"
+        },
+        {
+          "command": "richNotes.resolveCancel",
+          "when": "false"
         }
       ],
       "explorer/context": [
@@ -57,12 +184,32 @@
           "command": "richNotes.openWith",
           "when": "resourceExtname == .md",
           "group": "navigation@1"
+        },
+        {
+          "command": "richNotes.syncToNotion",
+          "when": "resourceExtname == .md && !(resourcePath in richNotes.syncedNotes)",
+          "group": "navigation@2"
+        },
+        {
+          "command": "richNotes.unlinkFromNotion",
+          "when": "resourceExtname == .md && resourcePath in richNotes.syncedNotes",
+          "group": "navigation@2"
         }
       ],
       "editor/title/context": [
         {
           "command": "richNotes.openWith",
           "when": "resourceExtname == .md",
+          "group": "1_open"
+        },
+        {
+          "command": "richNotes.syncToNotion",
+          "when": "resourceExtname == .md && !(resourcePath in richNotes.syncedNotes)",
+          "group": "1_open"
+        },
+        {
+          "command": "richNotes.unlinkFromNotion",
+          "when": "resourceExtname == .md && resourcePath in richNotes.syncedNotes",
           "group": "1_open"
         }
       ]
@@ -87,6 +234,9 @@
     "@blocknote/core": "^0.47.0",
     "@blocknote/mantine": "^0.47.0",
     "@blocknote/react": "^0.47.0",
+    "@notionhq/client": "^5.22.0",
+    "@tryfabric/martian": "^1.2.4",
+    "notion-to-md": "^3.1.9",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   }
