@@ -9,3 +9,4 @@ tsconfig.json
 **/*.blocks.json
 sample-note.md
 *.vsix
+docs/**

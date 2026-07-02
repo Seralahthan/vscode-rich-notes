@@ -1,107 +1,63 @@
-# Rich Notes — rich-text markdown editor for VS Code
+# Rich Notes
 
-A rich-text editor for `.md` files, with Notion-style inline rendering
-(type `-` and get a real bullet, headings render as you type). Files stay plain
-markdown on disk, so they remain portable and version-controllable — and ready
-for optional Notion sync in iteration 2.
+**A Notion-style rich-text editor for your markdown notes in VS Code — with optional two-way Notion sync.**
 
-## Iteration 1 (this version) — the editor
+Write notes in a clean WYSIWYG editor (slash menu, drag handles, formatting toolbar, quotes, code blocks, nested lists) while the file stays plain, portable markdown. Opt any note into **Notion sync** and edit it from anywhere.
 
-- Notion-style **block editor** for `.md` files powered by
-  [BlockNote](https://www.blocknotejs.org/) (ProseMirror + React): slash (`/`)
-  menu, draggable blocks, floating formatting toolbar, text alignment, checklists.
-- Edits the underlying `TextDocument` as markdown, so **save (`Cmd+S`), dirty
-  indicator, and undo/redo work natively** and files stay portable.
-- Two-way sync: external changes to the file (git checkout, find/replace) update
-  the editor; edits in the editor update the file.
-- Adopts the active VS Code color theme.
-- All assets are bundled locally — **no network calls, no telemetry**.
+![Rich Notes editor](https://raw.githubusercontent.com/Seralahthan/vscode-rich-notes/main/docs/images/hero.png)
 
-### Full fidelity via a sidecar
+---
 
-Markdown can't express everything a block editor can (e.g. nested/indented
-paragraphs). To avoid silently losing such edits, each note keeps a companion
-file next to it:
+## Features
 
-```
-my-note.md              <- readable, portable markdown (normal Cmd+S)
-my-note.md.blocks.json  <- BlockNote's exact blocks + a hash of the markdown
-```
+### ✍️ Notion-style editing, plain markdown on disk
+Type and see it rendered — no memorizing markdown syntax. Slash (`/`) menu for blocks, a floating formatting toolbar, drag-to-reorder, checklists, quotes, and code blocks. The underlying file is always clean `.md`, so it stays git-friendly and portable.
 
-- On **load**, if the sidecar's hash matches the current `.md`, the exact blocks
-  are restored (nesting and all). If the `.md` was changed outside the editor,
-  the hash won't match and we parse the markdown instead.
-- On **edit**, the sidecar is written automatically, so structure-only changes
-  (which don't alter the markdown) are still persisted.
+![Slash menu and formatting](https://raw.githubusercontent.com/Seralahthan/vscode-rich-notes/main/docs/images/editing.png)
 
-You can commit the sidecar for cross-machine fidelity, or `.gitignore` it and
-rely on the markdown — the note still opens either way.
+### 🔄 Two-way Notion sync (opt-in, per note)
+Link a note to a Notion page and it stays in sync — local edits push, Notion edits pull, automatically (on save, on open, and when you return to VS Code).
 
-### List normalization
+![Rich Notes and Notion side by side](https://raw.githubusercontent.com/Seralahthan/vscode-rich-notes/main/docs/images/notion-sync.png)
 
-BlockNote's markdown importer mishandles "loose" lists (blank lines between
-items); its own exporter also writes them. We tighten lists before parsing so
-they round-trip correctly. A deliberately multi-paragraph list item is the one
-structure this doesn't preserve in the markdown — but the sidecar keeps it.
+### 🧭 Conflict resolution with a diff
+When a note changes on both sides, Rich Notes opens a clean diff (Notion ↔ Local) with one-click actions: **keep local**, **keep remote**, or **merge & push**.
 
-### Markdown-native behavior
+![Conflict resolver](https://raw.githubusercontent.com/Seralahthan/vscode-rich-notes/main/docs/images/conflict.png)
 
-- **Blockquotes** use markdown's native `>` (BlockNote 0.47 `quote` block). Type
-  `> ` to start a quote; quotes import/export as `>`.
-- **Tab** nests **list items only**. On paragraphs / headings / quotes it is
-  suppressed (markdown can't express an indented paragraph). Use a quote for
-  call-outs instead.
-- **Code blocks** with no language export as a plain ```` ``` ```` fence (not
-  ```` ```text ````). Explicitly chosen languages (e.g. ```` ```javascript ````)
-  are preserved.
+---
 
-### Known gap: nested blockquotes (`>>`)
+## Getting started
 
-BlockNote's exporter flattens nested quotes to separate top-level `>` blocks, so
-the `.md` won't contain `>>`. Nesting still displays correctly in the editor
-(restored from the sidecar). True `>>` in the markdown would need custom
-serialization — not yet implemented.
+1. **Open a note as rich text:** right-click any `.md` file → **Rich Notes: Open as rich text** (or use the command palette). Or run **Rich Notes: New note**.
+2. Start typing. Use `/` for blocks, select text for the formatting toolbar, and hover a block for the drag handle.
+3. Double-clicking a `.md` still opens plain markdown by default — Rich Notes is opt-in, so it never touches your other markdown files.
 
-### Run it
+## Notion sync setup
 
-```bash
-npm install
-npm run compile
-```
+1. Create an **internal integration** at [notion.so/my-integrations](https://www.notion.so/my-integrations) and copy its secret.
+2. In Notion, create a **parent page** for your notes, open its **•••→ Connections**, and add your integration.
+3. Copy that page's 32-character id from its URL into **Settings → Rich Notes › Notion: Parent Page Id**.
+4. Run **Rich Notes: Set Notion token** and paste the secret (stored in VS Code SecretStorage).
+5. Right-click a note → **Rich Notes: Sync to Notion**. It's now linked and kept in sync.
 
-Then press **F5** in VS Code (Run Extension). In the new window:
+## Settings
 
-- Open any `.md` file, then run **"Rich Notes: Open as rich text"** from the
-  command palette (or the editor title bar button), **or**
-- Run **"Rich Notes: New note"** to create one and open it directly.
+| Setting | Default | Description |
+|---|---|---|
+| `richNotes.notion.parentPageId` | `""` | Notion page under which new synced notes are created. |
+| `richNotes.notion.autoSync` | `true` | Push a linked note to Notion when it's saved. |
+| `richNotes.autoSave` | `true` | Auto-save notes shortly after you stop typing. |
+| `richNotes.autoSaveDelay` | `1000` | Delay (ms) before auto-saving. |
 
-To make it the default for markdown: right-click a `.md` file → *Open With…* →
-*Configure default editor* → *Rich Notes (rich text)*.
+## Commands
 
-## Iteration 2 (planned) — optional Notion sync
+`Open as rich text` · `Open markdown source` · `New note` · `Sync to Notion` · `Unlink from Notion` · `Sync now` · `Pull from Notion (replace local)` · `Push to Notion (replace remote)` · `Sync status` · `Set / Clear Notion token`
 
-Per-note, opt-in sync. Design:
+## Notes on fidelity
 
-1. **Connection**: user supplies a Notion integration token (stored in VS Code
-   `SecretStorage`, never in the file or settings) and shares a parent page/DB
-   with the integration.
-2. **Per-note opt-in**: a "Sync with Notion" action on a note. Two entry points:
-   - *Link existing note* → creates a Notion page from the current markdown.
-   - *New synced note* → creates the Notion page first, then the local file.
-3. **Mapping**: store the Notion `pageId` + last-synced hash in a sidecar
-   (`.richnotes.json`) or YAML front-matter, so only opted-in notes sync.
-4. **Conversion**: markdown ⇄ Notion blocks via `@tryfabric/martian`
-   (md → blocks) and `notion-to-md` (blocks → md).
-5. **Sync engine**: on save, push if local changed; offer pull if remote changed;
-   detect conflicts via the stored hash.
+Markdown can't express everything a block editor can, so a full-fidelity copy of each note's blocks is kept in a sidecar (`<note>.md.blocks.json`) next to it. Markdown stays the readable source of truth; the sidecar preserves structure across reloads and feeds richer data to Notion. Notion-only features (colors, callouts) and some structures don't fully survive the markdown round-trip.
 
-The clean-markdown-on-disk design of iteration 1 is what makes this tractable.
+## License
 
-## Security notes
-
-- The webview runs with a strict CSP and a script nonce; only local bundled
-  assets load.
-- No analytics or external requests in iteration 1.
-- Iteration 2's Notion token will live in `SecretStorage`, and sync will be
-  **opt-in per note** — nothing leaves your machine unless you explicitly link a
-  note to Notion.
+[MIT](LICENSE)

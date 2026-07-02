@@ -20,6 +20,19 @@
     "Other",
     "Notebooks"
   ],
+  "keywords": [
+    "notion",
+    "markdown",
+    "notes",
+    "wysiwyg",
+    "rich text",
+    "block editor",
+    "sync"
+  ],
+  "galleryBanner": {
+    "color": "#24627C",
+    "theme": "dark"
+  },
   "main": "./dist/extension.js",
   "activationEvents": [
     "onStartupFinished"
