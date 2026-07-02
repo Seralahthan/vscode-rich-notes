@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
-import { createHash } from "crypto";
+import { hashOf, readSidecar, writeSidecar } from "./sidecar";
+import { checkRemoteOnOpen } from "./sync";
 
 /**
  * A CustomTextEditor that renders a markdown document with the BlockNote
@@ -15,6 +16,13 @@ import { createHash } from "crypto";
  */
 export class RichNotesEditorProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = "richNotes.editor";
+
+  /**
+   * The note shown in the currently-focused Rich Notes editor. Custom editors
+   * are not reported via `window.activeTextEditor`, so sync commands invoked
+   * from the command palette use this instead.
+   */
+  public static activeDocument: vscode.TextDocument | undefined;
 
   public static register(context: vscode.ExtensionContext): vscode.Disposable {
     return vscode.window.registerCustomEditorProvider(
@@ -41,39 +49,53 @@ export class RichNotesEditorProvider implements vscode.CustomTextEditorProvider 
     };
     webview.html = this.getHtml(webview);
 
-    const sidecarUri = document.uri.with({
-      path: document.uri.path + ".blocks.json",
-    });
-
     // True while we push document text into the webview, and true while we apply
     // a webview-originated edit — both suppress the change->webview echo.
     let updatingFromDocument = false;
     let applyingFromWebview = false;
 
-    const readSidecarBlocks = async (markdown: string): Promise<string | null> => {
-      try {
-        const raw = await vscode.workspace.fs.readFile(sidecarUri);
-        const parsed = JSON.parse(Buffer.from(raw).toString("utf8"));
-        if (parsed && parsed.markdownHash === hashOf(markdown) && parsed.blocks) {
-          return JSON.stringify(parsed.blocks);
+    // Debounced auto-save so notes persist shortly after editing (which also
+    // drives Notion auto-sync via onDidSaveTextDocument).
+    let saveTimer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleAutoSave = () => {
+      const cfg = vscode.workspace.getConfiguration("richNotes");
+      if (!cfg.get<boolean>("autoSave", true)) {
+        return;
+      }
+      const delay = cfg.get<number>("autoSaveDelay", 1000);
+      if (saveTimer) {
+        clearTimeout(saveTimer);
+      }
+      saveTimer = setTimeout(() => {
+        if (document.isDirty) {
+          void document.save();
         }
-      } catch {
-        // No sidecar, or unreadable — fall back to parsing markdown.
+      }, delay);
+    };
+
+    const readSidecarBlocks = async (markdown: string): Promise<string | null> => {
+      const sc = await readSidecar(document.uri);
+      if (
+        sc &&
+        sc.markdownHash === hashOf(markdown) &&
+        Array.isArray(sc.blocks) &&
+        sc.blocks.length > 0
+      ) {
+        return JSON.stringify(sc.blocks);
       }
       return null;
     };
 
-    const writeSidecar = async (markdown: string, blocksJson: string) => {
+    // Persist blocks, preserving any existing Notion link state.
+    const persistBlocks = async (markdown: string, blocksJson: string) => {
       try {
-        const payload = JSON.stringify({
+        const existing = await readSidecar(document.uri);
+        await writeSidecar(document.uri, {
           version: 1,
           markdownHash: hashOf(markdown),
           blocks: JSON.parse(blocksJson),
+          notion: existing?.notion,
         });
-        await vscode.workspace.fs.writeFile(
-          sidecarUri,
-          Buffer.from(payload, "utf8")
-        );
       } catch (err) {
         console.error("Rich Notes: failed to write sidecar", err);
       }
@@ -127,8 +149,9 @@ export class RichNotesEditorProvider implements vscode.CustomTextEditorProvider 
           // Persist full-fidelity blocks even when the markdown is unchanged
           // (e.g. nested paragraphs), so nothing is silently lost.
           if (typeof msg.blocks === "string") {
-            await writeSidecar(msg.text ?? document.getText(), msg.blocks);
+            await persistBlocks(msg.text ?? document.getText(), msg.blocks);
           }
+          scheduleAutoSave();
           break;
         case "acked":
           // Webview confirmed it ingested the content we pushed.
@@ -137,9 +160,32 @@ export class RichNotesEditorProvider implements vscode.CustomTextEditorProvider 
       }
     });
 
+    const trackActive = () => {
+      if (webviewPanel.active) {
+        RichNotesEditorProvider.activeDocument = document;
+      } else if (RichNotesEditorProvider.activeDocument === document) {
+        RichNotesEditorProvider.activeDocument = undefined;
+      }
+    };
+    trackActive();
+    const viewStateSub = webviewPanel.onDidChangeViewState(trackActive);
+
+    // Guaranteed "note opened" signal: sync on first open (deduped by the
+    // cooldown inside checkRemoteOnOpen against the tab-activation trigger).
+    void checkRemoteOnOpen(this.context, document.uri).catch((err) =>
+      console.error("Rich Notes: remote check on open failed", err)
+    );
+
     webviewPanel.onDidDispose(() => {
+      if (RichNotesEditorProvider.activeDocument === document) {
+        RichNotesEditorProvider.activeDocument = undefined;
+      }
+      if (saveTimer) {
+        clearTimeout(saveTimer);
+      }
       changeSub.dispose();
       messageSub.dispose();
+      viewStateSub.dispose();
     });
   }
 
@@ -177,10 +223,6 @@ export class RichNotesEditorProvider implements vscode.CustomTextEditorProvider 
 </body>
 </html>`;
   }
-}
-
-function hashOf(text: string): string {
-  return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
 function getNonce(): string {

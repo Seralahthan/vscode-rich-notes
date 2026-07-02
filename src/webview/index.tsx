@@ -71,6 +71,21 @@ function bareifyDefaultCodeFences(md: string): string {
   return md.replace(/^(\s*)```text$/gm, "$1```");
 }
 
+/**
+ * Canonical form written to disk: bare code fences, "-" list markers (not
+ * BlockNote's "*"), tight lists, no trailing whitespace, single trailing
+ * newline. This keeps saved files clean and byte-consistent with what
+ * notion-to-md produces, so Notion round-trips don't create cosmetic diffs.
+ * Idempotent: re-parsing and re-exporting yields the same output.
+ */
+function canonicalizeOutput(md: string): string {
+  let out = bareifyDefaultCodeFences(md);
+  out = out.replace(/^(\s*)[*+](\s+)/gm, "$1-$2"); // list markers -> "-"
+  out = tightenMarkdownLists(out);
+  out = out.replace(/[ \t]+$/gm, "").replace(/\n{3,}/g, "\n\n");
+  return out.replace(/\n*$/, "\n"); // exactly one trailing newline
+}
+
 // Block types where Tab should NOT nest. Tab nesting is reserved for list items
 // (real markdown nesting); on these it would create structure markdown can't
 // express, so we suppress it.
@@ -195,7 +210,7 @@ function Editor() {
   // Serialize the current document to markdown (with our fence fix). Used both
   // for change detection and for what we write to the .md file.
   const toMarkdown = async () =>
-    bareifyDefaultCodeFences(await editor.blocksToMarkdownLossy(editor.document));
+    canonicalizeOutput(await editor.blocksToMarkdownLossy(editor.document));
 
   // Load content from the host. Prefer the exact sidecar blocks when present;
   // otherwise parse the markdown.
