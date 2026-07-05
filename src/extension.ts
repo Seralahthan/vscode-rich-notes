@@ -4,7 +4,7 @@ import { registerNotionCommands } from "./notionCommands";
 import { registerAutoSync } from "./autoSync";
 import { SyncedRegistry } from "./syncedRegistry";
 import { registerNoteLifecycle } from "./noteLifecycle";
-import { registerConflictCommands, checkRemoteOnOpen } from "./sync";
+import { registerConflictCommands, checkRemoteOnOpen, isCancellation } from "./sync";
 
 export function activate(context: vscode.ExtensionContext) {
   // Register the rich-text custom editor for markdown files.
@@ -35,9 +35,11 @@ export function activate(context: vscode.ExtensionContext) {
   const syncActiveNote = () => {
     const uri = activeNoteUri();
     if (uri) {
-      void checkRemoteOnOpen(context, uri).catch((err) =>
-        console.error("Rich Notes: active-note remote check failed", err)
-      );
+      void checkRemoteOnOpen(context, uri).catch((err) => {
+        if (!isCancellation(err)) {
+          console.error("Rich Notes: active-note remote check failed", err);
+        }
+      });
     }
   };
 

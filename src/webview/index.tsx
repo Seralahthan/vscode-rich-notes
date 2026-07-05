@@ -91,6 +91,17 @@ function canonicalizeOutput(md: string): string {
 // express, so we suppress it.
 const NO_TAB_NEST = new Set(["paragraph", "heading", "quote"]);
 
+// Plain text of a block's inline content (ignores non-text inline nodes).
+function blockPlainText(block: { content?: unknown }): string {
+  const content = block.content;
+  if (!Array.isArray(content)) {
+    return "";
+  }
+  return content
+    .map((c: any) => (c?.type === "text" ? c.text ?? "" : ""))
+    .join("");
+}
+
 // A block whose inline content has no text.
 function isEmptyBlock(block: { content?: unknown }): boolean {
   const content = block.content;
@@ -268,6 +279,29 @@ function Editor() {
     // Capture phase so we intercept before BlockNote's ProseMirror keymap runs.
     const onKeyDownCapture = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) {
+        return;
+      }
+
+      // Markdown shortcut: typing the third backtick at the start of a
+      // paragraph (content is exactly "``") turns the block into a code block,
+      // mirroring the "- " → bullet rule. BlockNote otherwise only offers code
+      // blocks via the "/" menu. Intentionally no language preset: it adds no
+      // local rendering (syntax highlighting isn't enabled) and its language
+      // label mismatches Notion's spelling (js↔javascript), causing false
+      // sync conflicts. Pick a language from the block's dropdown if needed.
+      if (e.key === "`") {
+        try {
+          const block = editor.getTextCursorPosition().block;
+          if (block && block.type === "paragraph" && blockPlainText(block) === "``") {
+            e.preventDefault();
+            e.stopPropagation();
+            editor.updateBlock(block, { type: "codeBlock", content: [] });
+            editor.setTextCursorPosition(block, "end");
+            editor.focus();
+          }
+        } catch {
+          /* no cursor */
+        }
         return;
       }
 

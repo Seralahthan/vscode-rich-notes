@@ -6,6 +6,18 @@ import { canonicalizeMarkdown } from "./markdown";
 
 export type SyncTrigger = "manual" | "auto";
 
+/**
+ * True for the "Canceled" errors VS Code throws when in-flight async work is
+ * aborted — e.g. an on-focus sync interrupted by window reload / host
+ * deactivation. These are expected, not failures, so callers skip logging them.
+ */
+export function isCancellation(err: unknown): boolean {
+  return (
+    err instanceof vscode.CancellationError ||
+    (err as { name?: string })?.name === "Canceled"
+  );
+}
+
 // State for an in-progress diff-based conflict resolution (one at a time).
 interface PendingConflict {
   noteUri: vscode.Uri;

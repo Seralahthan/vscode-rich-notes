@@ -31,6 +31,16 @@ export function hashOf(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
+/**
+ * Hash tying a sidecar's blocks to the `.md` they were generated from. Trailing
+ * whitespace and CRLF/LF differences are normalized away first, so a final
+ * newline added on save (`files.insertFinalNewline`) or a different line ending
+ * doesn't make the hash mismatch and strand the blocks behind a lossy re-parse.
+ */
+export function sidecarMarkdownHash(markdown: string): string {
+  return hashOf(markdown.replace(/\r\n/g, "\n").replace(/\s+$/, ""));
+}
+
 export function sidecarUriFor(docUri: vscode.Uri): vscode.Uri {
   return docUri.with({ path: docUri.path + ".blocks.json" });
 }
@@ -63,7 +73,7 @@ export async function updateNotionLink(
   const existing = await readSidecar(docUri);
   await writeSidecar(docUri, {
     version: existing?.version ?? 1,
-    markdownHash: existing?.markdownHash ?? hashOf(markdown),
+    markdownHash: existing?.markdownHash ?? sidecarMarkdownHash(markdown),
     blocks: existing?.blocks ?? [],
     notion,
   });

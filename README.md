@@ -11,7 +11,7 @@ Write notes in a clean WYSIWYG editor (slash menu, drag handles, formatting tool
 ## Features
 
 ### ✍️ Notion-style editing, plain markdown on disk
-Type and see it rendered — no memorizing markdown syntax. Slash (`/`) menu for blocks, a floating formatting toolbar, drag-to-reorder, checklists, quotes, and code blocks. The underlying file is always clean `.md`, so it stays git-friendly and portable.
+Type and see it rendered — no memorizing markdown syntax. Slash (`/`) menu for blocks, a floating formatting toolbar, drag-to-reorder, checklists, quotes, and code blocks. Familiar markdown shortcuts also work inline — `-`+space for a bullet, `#`+space for a heading, and ` ``` ` for a code block. The underlying file is always clean `.md`, so it stays git-friendly and portable.
 
 ![Slash menu and formatting](https://raw.githubusercontent.com/Seralahthan/vscode-rich-notes/main/docs/images/editing.png)
 

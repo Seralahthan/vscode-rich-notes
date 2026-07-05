@@ -9,11 +9,66 @@
  *   4, BlockNote uses 2 — otherwise every nested line looks changed)
  * - strip trailing whitespace, collapse blank runs, trim ends
  */
+// Equivalent code-fence language spellings that Notion and BlockNote disagree
+// on. Normalized to a single canonical form purely for comparison/diffing, so a
+// language-name difference never shows up as a false conflict. The "plain-text
+// family" collapses to bare (empty) since Notion writes "plain text" where a
+// bare markdown fence / BlockNote's "text" mean the same thing.
+const FENCE_LANG_ALIASES: Record<string, string> = {
+  js: "javascript",
+  jsx: "javascript",
+  ts: "typescript",
+  tsx: "typescript",
+  py: "python",
+  rb: "ruby",
+  sh: "bash",
+  shell: "bash",
+  zsh: "bash",
+  yml: "yaml",
+  md: "markdown",
+  text: "",
+  plain: "",
+  plaintext: "",
+  "plain text": "",
+};
+
+function normalizeFenceLang(info: string): string {
+  const lang = info.trim().toLowerCase();
+  return lang in FENCE_LANG_ALIASES ? FENCE_LANG_ALIASES[lang] : lang;
+}
+
+/**
+ * Rewrite opening code-fence language labels to a canonical form so equivalent
+ * names (js/javascript, plain/text/"plain text"/bare) compare equal. Tracks
+ * fence open/close state so lines that merely start with backticks *inside* a
+ * code block are left untouched.
+ */
+export function normalizeCodeFenceLanguages(md: string): string {
+  const lines = md.split("\n");
+  let inFence = false;
+  let marker = "";
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^(\s*)(`{3,}|~{3,})(.*)$/.exec(lines[i]);
+    if (!m) {
+      continue;
+    }
+    const [, indent, ticks, rest] = m;
+    if (!inFence) {
+      inFence = true;
+      marker = ticks[0];
+      lines[i] = indent + ticks + normalizeFenceLang(rest);
+    } else if (ticks[0] === marker && rest.trim() === "") {
+      inFence = false; // closing fence
+    }
+  }
+  return lines.join("\n");
+}
+
 export function canonicalizeMarkdown(md: string): string {
   const isListItem = (l: string) => /^\s*([-*+]|\d+[.)])\s+/.test(l);
   const isBlank = (l: string) => l.trim() === "";
 
-  const lines = md
+  const lines = normalizeCodeFenceLanguages(md)
     .replace(/[ \t]+$/gm, "")
     .split("\n")
     .map((l) => l.replace(/^(\s*)[*+](\s+)/, "$1-$2"))

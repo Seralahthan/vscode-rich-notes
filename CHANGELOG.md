@@ -2,6 +2,29 @@
 
 All notable changes to **Rich Notes** are documented here.
 
+## 0.3.5
+
+### Editor
+- **Markdown shortcut for code blocks**: type ` ``` ` at the start of a line to
+  turn it into a code block, matching the existing `-`+space → bullet shortcut.
+
+### Notion sync
+- **Sync on editor refocus**: returning focus to a note's editor now pulls remote
+  changes — previously a pull only ran on open, on save, or when the whole VS Code
+  window regained focus.
+- **No more false conflicts from code-block languages**: equivalent fence language
+  names (`js`/`javascript`, `py`/`python`, `plain`/`plain text`/bare, …) are
+  normalized before comparison, so code blocks no longer show as a conflict on
+  every sync.
+- Cancellation errors during window reload / extension deactivation are no longer
+  logged as sync failures.
+
+### Fidelity & robustness
+- **Resilient sidecar restore**: the blocks↔markdown hash now tolerates
+  trailing-newline and line-ending differences, so full-fidelity blocks aren't
+  discarded after a save. If a note's `.md` is emptied outside the editor, the
+  blocks are restored from the sidecar instead of showing a blank note.
+
 ## 0.3.4
 
 ### Notion sync (opt-in, per note)

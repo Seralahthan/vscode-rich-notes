@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
-import { hashOf, readSidecar, writeSidecar } from "./sidecar";
-import { checkRemoteOnOpen } from "./sync";
+import { sidecarMarkdownHash, readSidecar, writeSidecar } from "./sidecar";
+import { checkRemoteOnOpen, isCancellation } from "./sync";
 
 /**
  * A CustomTextEditor that renders a markdown document with the BlockNote
@@ -75,11 +75,16 @@ export class RichNotesEditorProvider implements vscode.CustomTextEditorProvider 
 
     const readSidecarBlocks = async (markdown: string): Promise<string | null> => {
       const sc = await readSidecar(document.uri);
+      if (!sc || !Array.isArray(sc.blocks) || sc.blocks.length === 0) {
+        return null;
+      }
+      // Restore the exact blocks when the hash still matches the .md, OR when the
+      // .md is empty/whitespace: an external truncation (bad revert, git, etc.)
+      // shouldn't discard content that survives only in the sidecar — there is
+      // nothing to fall back to, so the sidecar is authoritative.
       if (
-        sc &&
-        sc.markdownHash === hashOf(markdown) &&
-        Array.isArray(sc.blocks) &&
-        sc.blocks.length > 0
+        sc.markdownHash === sidecarMarkdownHash(markdown) ||
+        markdown.trim() === ""
       ) {
         return JSON.stringify(sc.blocks);
       }
@@ -92,7 +97,7 @@ export class RichNotesEditorProvider implements vscode.CustomTextEditorProvider 
         const existing = await readSidecar(document.uri);
         await writeSidecar(document.uri, {
           version: 1,
-          markdownHash: hashOf(markdown),
+          markdownHash: sidecarMarkdownHash(markdown),
           blocks: JSON.parse(blocksJson),
           notion: existing?.notion,
         });
@@ -160,21 +165,37 @@ export class RichNotesEditorProvider implements vscode.CustomTextEditorProvider 
       }
     });
 
+    let wasActive = webviewPanel.active;
     const trackActive = () => {
       if (webviewPanel.active) {
         RichNotesEditorProvider.activeDocument = document;
+        // Rising edge: the panel just regained focus (returning from Notion in a
+        // browser tab, or refocusing the editor within VS Code without the OS
+        // window blurring). Pull any remote changes — the cooldown inside
+        // checkRemoteOnOpen dedupes this against the window-focus, tab-activation
+        // and first-open triggers.
+        if (!wasActive) {
+          void checkRemoteOnOpen(this.context, document.uri).catch((err) => {
+            if (!isCancellation(err)) {
+              console.error("Rich Notes: remote check on refocus failed", err);
+            }
+          });
+        }
       } else if (RichNotesEditorProvider.activeDocument === document) {
         RichNotesEditorProvider.activeDocument = undefined;
       }
+      wasActive = webviewPanel.active;
     };
     trackActive();
     const viewStateSub = webviewPanel.onDidChangeViewState(trackActive);
 
     // Guaranteed "note opened" signal: sync on first open (deduped by the
     // cooldown inside checkRemoteOnOpen against the tab-activation trigger).
-    void checkRemoteOnOpen(this.context, document.uri).catch((err) =>
-      console.error("Rich Notes: remote check on open failed", err)
-    );
+    void checkRemoteOnOpen(this.context, document.uri).catch((err) => {
+      if (!isCancellation(err)) {
+        console.error("Rich Notes: remote check on open failed", err);
+      }
+    });
 
     webviewPanel.onDidDispose(() => {
       if (RichNotesEditorProvider.activeDocument === document) {
