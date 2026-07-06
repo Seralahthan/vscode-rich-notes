@@ -120,6 +120,48 @@ const LIST_TYPES = new Set([
   "toggleListItem",
 ]);
 
+// Intentional empty paragraphs (vertical spacing the user typed with Enter)
+// can't survive a plain-markdown round-trip — CommonMark collapses blank lines.
+// We serialize each empty paragraph as a `<br>` line, which renders as a blank
+// line in any markdown viewer, and restore it to an empty paragraph on load. A
+// plain-text sentinel bridges BlockNote's block<->markdown conversion so the
+// `<br>` is never escaped or reinterpreted by the serializer/parser.
+const BR_SENTINEL = "rnEmptyLineBrx9f3a";
+const BR_SENTINEL_LINE = new RegExp(`^[ \\t]*${BR_SENTINEL}[ \\t]*$`, "gm");
+const BR_LINE = /^[ \t]*<br\s*\/?>[ \t]*$/gim;
+
+function isEmptyParagraph(b: any): boolean {
+  return b?.type === "paragraph" && isEmptyBlock(b);
+}
+
+// Export: replace each empty paragraph with a sentinel-text paragraph, so it
+// serializes to a distinct line we can turn into `<br>`.
+function emptyParasToSentinel(blocks: any[]): any[] {
+  return blocks.map((b) => {
+    if (isEmptyParagraph(b)) {
+      return { ...b, content: [{ type: "text", text: BR_SENTINEL, styles: {} }] };
+    }
+    if (Array.isArray(b.children) && b.children.length) {
+      return { ...b, children: emptyParasToSentinel(b.children) };
+    }
+    return b;
+  });
+}
+
+// Import: turn sentinel-text paragraphs (parsed from `<br>` lines) back into
+// empty paragraphs so the editor shows the same spacing.
+function sentinelToEmptyParas(blocks: any[]): any[] {
+  return blocks.map((b) => {
+    if (b?.type === "paragraph" && blockPlainText(b) === BR_SENTINEL) {
+      return { ...b, content: [] };
+    }
+    if (Array.isArray(b.children) && b.children.length) {
+      return { ...b, children: sentinelToEmptyParas(b.children) };
+    }
+    return b;
+  });
+}
+
 /**
  * Custom formatting toolbar:
  *  - list items keep the Nest / Unnest (indent) buttons
@@ -220,8 +262,19 @@ function Editor() {
 
   // Serialize the current document to markdown (with our fence fix). Used both
   // for change detection and for what we write to the .md file.
-  const toMarkdown = async () =>
-    canonicalizeOutput(await editor.blocksToMarkdownLossy(editor.document));
+  const toMarkdown = async () => {
+    // Drop trailing empty paragraphs (BlockNote's end-of-document cursor line
+    // plus any accumulated blanks) so notes don't export spurious trailing
+    // `<br/>`. Empty lines at end-of-file carry no meaning — intentional spacing
+    // is always *between* content blocks, and that is preserved.
+    let end = editor.document.length;
+    while (end > 0 && isEmptyParagraph(editor.document[end - 1])) {
+      end--;
+    }
+    const blocks = editor.document.slice(0, end);
+    const raw = await editor.blocksToMarkdownLossy(emptyParasToSentinel(blocks));
+    return canonicalizeOutput(raw.replace(BR_SENTINEL_LINE, "<br/>"));
+  };
 
   // Load content from the host. Prefer the exact sidecar blocks when present;
   // otherwise parse the markdown.
@@ -239,7 +292,11 @@ function Editor() {
       const blocks =
         blocksJson != null
           ? JSON.parse(blocksJson)
-          : await editor.tryParseMarkdownToBlocks(tightenMarkdownLists(markdown));
+          : sentinelToEmptyParas(
+              await editor.tryParseMarkdownToBlocks(
+                tightenMarkdownLists(markdown.replace(BR_LINE, BR_SENTINEL))
+              )
+            );
       editor.replaceBlocks(
         editor.document,
         blocks.length > 0 ? blocks : [{ type: "paragraph" }]

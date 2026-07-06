@@ -16,8 +16,30 @@ body,
 
 .bn-editor {
   padding-top: 24px;
-  max-width: 820px;
+  max-width: 1100px;
   margin: 0 auto;
+  /*
+   * A comfortable fixed prose base — close to the VS Code markdown preview.
+   * (We intentionally don't inherit `--vscode-editor-font-size`: that's the
+   * code-editor font, which is often set small and reads too tight for prose.)
+   */
+  font-size: 15px;
+}
+
+/*
+ * Flatten BlockNote's heading scale (its default h1 = 3em / h2 = 2em / h3 =
+ * 1.3em dwarfs the body) to the VS Code markdown-preview proportions, so body
+ * text stays prominent relative to headings. `!important` overrides BlockNote's
+ * animated `--level`/`--prev-level` font-size variable.
+ */
+.bn-block-content[data-content-type="heading"][data-level="1"] {
+  font-size: 2em !important;
+}
+.bn-block-content[data-content-type="heading"][data-level="2"] {
+  font-size: 1.5em !important;
+}
+.bn-block-content[data-content-type="heading"][data-level="3"] {
+  font-size: 1.25em !important;
 }
 
 /* Map BlockNote's surfaces onto the active VS Code theme. */
@@ -32,6 +54,19 @@ body,
   --bn-colors-selected-background: var(--vscode-list-activeSelectionBackground);
   --bn-colors-selected-text: var(--vscode-list-activeSelectionForeground);
   --bn-colors-border: var(--vscode-widget-border, var(--vscode-editorWidget-border));
+}
+
+/*
+ * The empty-block placeholder ("Enter text or type '/' for commands"). BlockNote
+ * colors it via --bn-colors-side-menu (a light gray that reads near-white on
+ * dark themes); recolor it to VS Code's ghost/hint-text tone so it clearly reads
+ * as a hint, not real content — and adapts to any theme.
+ */
+.bn-inline-content:has(> .ProseMirror-trailingBreak):before {
+  color: var(
+    --vscode-editorGhostText-foreground,
+    var(--vscode-descriptionForeground, var(--vscode-disabledForeground))
+  ) !important;
 }
 
 /*

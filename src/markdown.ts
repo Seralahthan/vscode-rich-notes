@@ -74,7 +74,11 @@ export function canonicalizeMarkdown(md: string): string {
     .map((l) => l.replace(/^(\s*)[*+](\s+)/, "$1-$2"))
     // Drop empty list items ("- " with no text): Notion doesn't store them, so
     // they never survive a round-trip and otherwise cause false differences.
-    .filter((l) => !/^\s*([-*+]|\d+[.)])\s*$/.test(l));
+    .filter((l) => !/^\s*([-*+]|\d+[.)])\s*$/.test(l))
+    // Drop `<br>` spacing lines: they're a local presentation device for empty
+    // paragraphs and don't round-trip through Notion, so they must not count as
+    // a content change (which would cause spurious conflicts/pushes).
+    .filter((l) => !/^\s*<br\s*\/?>\s*$/i.test(l));
 
   const tight: string[] = [];
   for (let i = 0; i < lines.length; i++) {

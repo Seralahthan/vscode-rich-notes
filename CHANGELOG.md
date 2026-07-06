@@ -2,6 +2,22 @@
 
 All notable changes to **Rich Notes** are documented here.
 
+## 0.3.7
+
+### Editor
+- **Preserve intentional empty-line spacing**: blank lines you add are now
+  exported as `<br/>` (and restored on load), so vertical spacing renders in any
+  markdown viewer instead of collapsing. Trailing end-of-file blanks are trimmed.
+- **Typography**: a comfortable 15px prose base (independent of the small
+  code-editor font), a heading scale flattened to match the markdown preview, and
+  a wider content column.
+- **Muted placeholder**: the "Enter text…" hint uses VS Code's ghost-text color,
+  so it reads as a hint rather than real content.
+
+### Notion sync
+- `<br/>` spacing lines are ignored by change detection, so added spacing never
+  causes spurious conflicts or pushes.
+
 ## 0.3.6
 
 ### Workspace
