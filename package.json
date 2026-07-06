@@ -2,7 +2,7 @@
   "name": "vscode-rich-notes",
   "displayName": "Rich Notes",
   "description": "A Notion-style rich-text editor for markdown notes in VS Code.",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "publisher": "Seralahthan",
   "license": "MIT",
   "icon": "icon.png",
@@ -38,6 +38,14 @@
     "onStartupFinished"
   ],
   "contributes": {
+    "configurationDefaults": {
+      "files.exclude": {
+        "**/*.md.blocks.json": true
+      },
+      "search.exclude": {
+        "**/*.md.blocks.json": true
+      }
+    },
     "customEditors": [
       {
         "viewType": "richNotes.editor",

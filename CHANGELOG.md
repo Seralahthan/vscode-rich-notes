@@ -2,6 +2,14 @@
 
 All notable changes to **Rich Notes** are documented here.
 
+## 0.3.6
+
+### Workspace
+- **Hide sidecar files**: the `*.md.blocks.json` companion files are now excluded
+  from the Explorer and from search by default (contributed `files.exclude` /
+  `search.exclude`), so they no longer clutter the workspace. They remain on disk
+  next to each note.
+
 ## 0.3.5
 
 ### Editor
