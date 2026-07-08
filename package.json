@@ -1,6 +1,6 @@
 {
   "name": "vscode-rich-notes",
-  "displayName": "Rich Notes",
+  "displayName": "Rich Notes — Notion-style Editor",
   "description": "A Notion-style rich-text editor for markdown notes in VS Code.",
   "version": "0.4.1",
   "publisher": "Seralahthan",
