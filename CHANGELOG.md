@@ -2,6 +2,16 @@
 
 All notable changes to **Rich Notes** are documented here.
 
+## 0.4.1
+
+### Notion sync
+- **Notion page title is the note's first heading**: the first heading in a note
+  (any level, ignoring leading blank lines) becomes the Notion page title and is
+  stripped from the pushed body, so it's no longer duplicated as the first block
+  on the page. Editing that heading in the editor renames the Notion page rather
+  than its content. The file name is used as the title only when a note has no
+  heading; a headingless note never gains one on pull.
+
 ## 0.3.8
 
 ### Editor

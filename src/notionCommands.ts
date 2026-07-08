@@ -11,7 +11,6 @@ import {
   getParentPageId,
   createLinkedPage,
   pushToPage,
-  deriveTitle,
 } from "./notionSync";
 
 /** Resolve the note a command should act on. */
@@ -68,9 +67,12 @@ async function syncCommand(
     },
     async () => {
       try {
+        // Fall back to the file name for the Notion title when the note has no
+        // heading of its own.
+        const fallbackTitle = path.basename(doc.uri.fsPath, ".md");
         let newLink;
         if (link?.pageId) {
-          newLink = await pushToPage(token, link.pageId, markdown);
+          newLink = await pushToPage(token, link.pageId, markdown, fallbackTitle);
         } else {
           const parent = getParentPageId();
           if (!parent) {
@@ -79,8 +81,7 @@ async function syncCommand(
             );
             return;
           }
-          const title = deriveTitle(markdown, path.basename(doc.uri.fsPath, ".md"));
-          newLink = await createLinkedPage(token, parent, title, markdown);
+          newLink = await createLinkedPage(token, parent, markdown, fallbackTitle);
         }
         await updateNotionLink(doc.uri, markdown, newLink);
         registry.markSynced(doc.uri);

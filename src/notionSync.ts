@@ -50,12 +50,6 @@ function createClient(token: string): Client {
   return new Client({ auth: token });
 }
 
-export function deriveTitle(markdown: string, fallback: string): string {
-  const m = markdown.match(/^#{1,6}\s+(.+)$/m);
-  const title = (m?.[1] ?? fallback).trim();
-  return (title || fallback).slice(0, 200);
-}
-
 // martian returns Notion block-request objects; their precise type is awkward,
 // so we treat them loosely here.
 function toNotionBlocks(markdown: string): any[] {
@@ -98,15 +92,83 @@ async function editedTime(client: Client, pageId: string): Promise<string | unde
   return page.last_edited_time;
 }
 
+// The Notion page title is the note's first heading — any level, ignoring
+// leading blank lines (falling back to the file name when there's no heading).
+// That heading is stripped from the pushed body so it isn't duplicated as the
+// first block on the Notion page, and re-added at the same level on pull.
+// Editing the heading in the editor therefore renames the Notion page, not its
+// content.
+const HEADING_LINE = /^(#{1,6})\s+(.+?)\s*$/;
+
+/** The note's first heading (skipping leading blank lines), with the body after it. */
+function firstHeading(
+  markdown: string
+): { level: number; text: string; body: string } | null {
+  const lines = markdown.split("\n");
+  let i = 0;
+  while (i < lines.length && lines[i].trim() === "") {
+    i++;
+  }
+  const m = i < lines.length ? HEADING_LINE.exec(lines[i]) : null;
+  if (!m) {
+    return null;
+  }
+  const body = lines.slice(i + 1).join("\n").replace(/^[ \t]*\n/, "");
+  return { level: m[1].length, text: m[2].slice(0, 2000), body };
+}
+
+/**
+ * Split a note into its Notion page title and the body to push (with the title
+ * heading removed). Falls back to `fallback` (the file name) when there is no
+ * heading.
+ */
+export function splitTitle(
+  markdown: string,
+  fallback: string
+): { title: string; body: string } {
+  const h = firstHeading(markdown);
+  return h
+    ? { title: h.text, body: h.body }
+    : { title: (fallback || "Untitled").slice(0, 2000), body: markdown };
+}
+
+/**
+ * Rebuild local markdown from a pulled page: re-add the page title as a heading
+ * (at the local note's heading level) only when the local note is title-headed,
+ * so a headingless note never gains one.
+ */
+export function joinTitle(localMarkdown: string, title: string, body: string): string {
+  const h = firstHeading(localMarkdown);
+  return h ? `${"#".repeat(h.level)} ${title}\n\n${body}` : body;
+}
+
+function pageTitle(page: any): string {
+  const props = page?.properties ?? {};
+  for (const key of Object.keys(props)) {
+    if (props[key]?.type === "title") {
+      return (props[key].title ?? []).map((t: any) => t.plain_text ?? "").join("");
+    }
+  }
+  return "";
+}
+
+async function setPageTitle(client: Client, pageId: string, title: string): Promise<void> {
+  await client.pages.update({
+    page_id: pageId,
+    properties: { title: { title: [{ text: { content: title } }] } },
+  } as any);
+}
+
 /** Create a new Notion page under the configured parent and push the content. */
 export async function createLinkedPage(
   token: string,
   parentPageId: string,
-  title: string,
-  markdown: string
+  markdown: string,
+  fallbackTitle: string
 ): Promise<NotionLink> {
   const client = createClient(token);
-  const blocks = toNotionBlocks(markdown);
+  const { title, body } = splitTitle(markdown, fallbackTitle);
+  const blocks = toNotionBlocks(body);
   const page = (await client.pages.create({
     parent: { type: "page_id", page_id: parentPageId },
     properties: { title: { title: [{ text: { content: title } }] } },
@@ -124,14 +186,17 @@ export async function createLinkedPage(
   };
 }
 
-/** Overwrite an existing Notion page's content with the given markdown. */
+/** Overwrite an existing Notion page's title and content from the markdown. */
 export async function pushToPage(
   token: string,
   pageId: string,
-  markdown: string
+  markdown: string,
+  fallbackTitle: string
 ): Promise<NotionLink> {
   const client = createClient(token);
-  const blocks = toNotionBlocks(markdown);
+  const { title, body } = splitTitle(markdown, fallbackTitle);
+  await setPageTitle(client, pageId, title);
+  const blocks = toNotionBlocks(body);
   await clearChildren(client, pageId);
   await appendInBatches(client, pageId, blocks);
   return {
@@ -143,16 +208,24 @@ export async function pushToPage(
   };
 }
 
-/** Fetch a Notion page and convert it to markdown. */
+/**
+ * Fetch a Notion page and convert it to markdown, re-adding the page title as an
+ * H1 when the local note is title-headed (so change detection stays stable).
+ */
 export async function pullFromPage(
   token: string,
-  pageId: string
+  pageId: string,
+  localMarkdown: string
 ): Promise<{ markdown: string; lastEditedTime?: string }> {
   const client = createClient(token);
   const n2m = new NotionToMarkdown({ notionClient: client });
   const mdBlocks = await n2m.pageToMarkdown(pageId);
-  const markdown = splitSoftBreaks(n2m.toMarkdownString(mdBlocks).parent ?? "");
-  return { markdown, lastEditedTime: await editedTime(client, pageId) };
+  const body = splitSoftBreaks(n2m.toMarkdownString(mdBlocks).parent ?? "");
+  const page = (await client.pages.retrieve({ page_id: pageId })) as any;
+  return {
+    markdown: joinTitle(localMarkdown, pageTitle(page), body),
+    lastEditedTime: page.last_edited_time,
+  };
 }
 
 /** Current `last_edited_time` of a page (for remote-change detection). */

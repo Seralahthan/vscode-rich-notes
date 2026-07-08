@@ -127,7 +127,11 @@ async function runSync(
   // last_edited_time is truncated to the minute, so an edit within the same
   // minute as the last sync would be invisible. We compare canonical content of
   // local and remote against the stored base (lastSyncedMarkdown).
-  const { markdown: remote, lastEditedTime } = await pullFromPage(token, link.pageId);
+  const { markdown: remote, lastEditedTime } = await pullFromPage(
+    token,
+    link.pageId,
+    markdown
+  );
   const cLocal = canonicalizeMarkdown(markdown);
   const cRemote = canonicalizeMarkdown(remote);
   const cBase = canonicalizeMarkdown(link.lastSyncedMarkdown ?? "");
@@ -142,7 +146,12 @@ async function runSync(
   }
 
   if (localChanged && !remoteChanged) {
-    const newLink = await pushToPage(token, link.pageId, markdown);
+    const newLink = await pushToPage(
+      token,
+      link.pageId,
+      markdown,
+      path.basename(noteUri.fsPath, ".md")
+    );
     await updateNotionLink(noteUri, markdown, newLink);
     if (trigger === "manual") {
       vscode.window.showInformationMessage("Pushed to Notion.");
@@ -270,7 +279,12 @@ async function finishResolve(mode: ResolveMode): Promise<void> {
       );
       vscode.window.showInformationMessage("Replaced the local note with the Notion version.");
     } else if (mode === "local") {
-      const newLink = await pushToPage(p.token, p.link.pageId, p.localMarkdown);
+      const newLink = await pushToPage(
+        p.token,
+        p.link.pageId,
+        p.localMarkdown,
+        path.basename(p.noteUri.fsPath, ".md")
+      );
       await updateNotionLink(p.noteUri, p.localMarkdown, newLink);
       vscode.window.showInformationMessage("Pushed your local version to Notion.");
     } else if (mode === "merge") {
@@ -278,7 +292,12 @@ async function finishResolve(mode: ResolveMode): Promise<void> {
       const bytes = await vscode.workspace.fs.readFile(p.rightUri);
       const merged = Buffer.from(bytes).toString("utf8");
       await setNoteContent(p.noteUri, merged);
-      const newLink = await pushToPage(p.token, p.link.pageId, merged);
+      const newLink = await pushToPage(
+        p.token,
+        p.link.pageId,
+        merged,
+        path.basename(p.noteUri.fsPath, ".md")
+      );
       await updateNotionLink(p.noteUri, merged, newLink);
       vscode.window.showInformationMessage("Merged and pushed to Notion.");
     }
@@ -354,7 +373,11 @@ export async function syncStatus(
     return;
   }
   const doc = await vscode.workspace.openTextDocument(noteUri);
-  const { markdown: remote, lastEditedTime } = await pullFromPage(token, link.pageId);
+  const { markdown: remote, lastEditedTime } = await pullFromPage(
+    token,
+    link.pageId,
+    doc.getText()
+  );
 
   // Content-based (matches the sync engine): compare canonical local/remote to base.
   const cLocal = canonicalizeMarkdown(doc.getText());
@@ -395,7 +418,8 @@ export async function forcePull(
     return;
   }
   try {
-    const { markdown, lastEditedTime } = await pullFromPage(token, link.pageId);
+    const local = (await vscode.workspace.openTextDocument(noteUri)).getText();
+    const { markdown, lastEditedTime } = await pullFromPage(token, link.pageId, local);
     await setNoteContent(noteUri, markdown);
     await updateNotionLink(noteUri, markdown, linkFrom(link.pageId, markdown, lastEditedTime));
     vscode.window.showInformationMessage("Pulled from Notion — local note replaced.");
@@ -426,7 +450,12 @@ export async function forcePush(
   }
   try {
     const md = (await vscode.workspace.openTextDocument(noteUri)).getText();
-    const newLink = await pushToPage(token, link.pageId, md);
+    const newLink = await pushToPage(
+      token,
+      link.pageId,
+      md,
+      path.basename(noteUri.fsPath, ".md")
+    );
     await updateNotionLink(noteUri, md, newLink);
     vscode.window.showInformationMessage("Pushed to Notion — remote page replaced.");
   } finally {
