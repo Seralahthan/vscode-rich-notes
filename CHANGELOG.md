@@ -2,6 +2,15 @@
 
 All notable changes to **Rich Notes** are documented here.
 
+## 0.3.8
+
+### Editor
+- **Slash menu stays open across tab/window switches**: leaving and returning to
+  the note no longer dismisses the menu — it stays until you pick an item, press
+  Escape, or click elsewhere in the editor (matching Notion).
+- **Inline "Type to search" hint**: typing `/` shows a Notion-style ghost hint
+  right after the cursor; it disappears as you type a query and the list filters.
+
 ## 0.3.7
 
 ### Editor

@@ -20,6 +20,8 @@ import {
 } from "@blocknote/react";
 import { BlockNoteView } from "@blocknote/mantine";
 import { en } from "@blocknote/core/locales";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import "@blocknote/core/fonts/inter.css";
 import "@blocknote/mantine/style.css";
 import "./theme.css";
@@ -248,6 +250,82 @@ function Editor() {
       },
     },
   });
+
+  // Register two ProseMirror plugins on the underlying editor (no dependency
+  // patch), to match Notion's slash-menu behavior:
+  //  1. Keep the slash menu open across a window switch. BlockNote core closes
+  //     it on any transaction carrying `blur` OR `focus` meta — the menu is
+  //     actually dropped when the window *regains* focus (the editor re-focuses).
+  //     We drop those focus/blur transactions only if they land right after an
+  //     OS-window focus change (app switch); a genuine click-away in the same
+  //     the slash menu is active (the block still starts with "/"). This keeps
+  //     the menu open across a tab/window switch — the editor blurs when it's
+  //     hidden and re-focuses on return, and BlockNote core would otherwise
+  //     close the menu on those focus/blur transactions. Selecting an item,
+  //     pressing Escape, or clicking (a `pointer` transaction) still close it,
+  //     since those aren't focus/blur. Effectively "keep the menu open while a
+  //     `/` is present," matching Notion.
+  //  2. Show a Notion-style "Type to search" ghost hint right after a lone "/".
+  useEffect(() => {
+    const tt = (editor as unknown as { _tiptapEditor?: any })._tiptapEditor;
+    if (!tt?.registerPlugin) {
+      return;
+    }
+    const keepMenuKey = new PluginKey("rnKeepMenuOnSwitch");
+    const keepMenu = new Plugin({
+      key: keepMenuKey,
+      filterTransaction: (tr) => {
+        if (tr.getMeta("blur") || tr.getMeta("focus")) {
+          try {
+            if (tr.selection.$from.parent.textContent.startsWith("/")) {
+              return false; // a slash query is active — don't let blur/focus close it
+            }
+          } catch {
+            /* no resolvable selection */
+          }
+        }
+        return true;
+      },
+    });
+
+    const slashHintKey = new PluginKey("rnSlashHint");
+    const slashHint = new Plugin({
+      key: slashHintKey,
+      props: {
+        decorations(state) {
+          const sel = state.selection;
+          // Only when the block holds exactly the trigger "/" (menu just opened,
+          // no query yet). Once the user types a query the hint disappears and
+          // the list filters, matching Notion.
+          if (!sel.empty || sel.$from.parent.textContent !== "/") {
+            return null;
+          }
+          const widget = Decoration.widget(
+            sel.from,
+            () => {
+              const span = document.createElement("span");
+              span.className = "rn-slash-hint";
+              span.textContent = "Type to search…";
+              return span;
+            },
+            { side: 1, ignoreSelection: true }
+          );
+          return DecorationSet.create(state.doc, [widget]);
+        },
+      },
+    });
+
+    tt.registerPlugin(keepMenu);
+    tt.registerPlugin(slashHint);
+    return () => {
+      try {
+        tt.unregisterPlugin(keepMenuKey);
+        tt.unregisterPlugin(slashHintKey);
+      } catch {
+        /* editor already torn down */
+      }
+    };
+  }, [editor]);
 
   // True while we apply content from the host, so the resulting onChange is
   // not echoed back as a user edit.

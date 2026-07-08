@@ -57,6 +57,18 @@ body,
 }
 
 /*
+ * Slash-menu "Type to search" ghost hint, rendered as a widget decoration right
+ * after a lone "/" (Notion-style). Non-interactive, muted, disappears as soon as
+ * the user types a query.
+ */
+.rn-slash-hint {
+  color: var(--vscode-editorGhostText-foreground, var(--vscode-descriptionForeground));
+  font-style: italic;
+  pointer-events: none;
+  user-select: none;
+}
+
+/*
  * The empty-block placeholder ("Enter text or type '/' for commands"). BlockNote
  * colors it via --bn-colors-side-menu (a light gray that reads near-white on
  * dark themes); recolor it to VS Code's ghost/hint-text tone so it clearly reads
