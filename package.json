@@ -2,7 +2,7 @@
   "name": "vscode-rich-notes",
   "displayName": "Rich Notes — Notion-style Editor",
   "description": "A Notion-style rich-text editor for markdown notes in VS Code.",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "publisher": "Seralahthan",
   "license": "MIT",
   "icon": "icon.png",

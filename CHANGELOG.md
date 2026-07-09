@@ -2,6 +2,18 @@
 
 All notable changes to **Rich Notes** are documented here.
 
+## 0.4.2
+
+### Docs
+- **How to open a note**: added a prominent "Opening a note in Rich Notes"
+  section near the top of the README, with a screenshot of the Explorer
+  right-click menu, so it's clear how to launch the editor (right-click a
+  `.md` → **Rich Notes: Open as rich text**).
+- **Reliable README images**: screenshots are now served via the jsDelivr CDN
+  instead of `raw.githubusercontent.com`, which rate-limits (HTTP 429) and left
+  images intermittently broken on the Marketplace listing and the extension
+  details pane.
+
 ## 0.4.1
 
 ### Notion sync
