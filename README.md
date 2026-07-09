@@ -8,6 +8,16 @@ Write notes in a clean WYSIWYG editor (slash menu, drag handles, formatting tool
 
 ---
 
+## Opening a note in Rich Notes
+
+Rich Notes is **opt-in** — double-clicking a `.md` still opens plain markdown, so it never touches your other files. To open a note as rich text, **right-click any `.md` file** in the Explorer and choose **Rich Notes: Open as rich text**:
+
+![Right-click a markdown file and choose Rich Notes: Open as rich text](https://cdn.jsdelivr.net/gh/Seralahthan/vscode-rich-notes@v0.4.2/docs/images/open-menu.png)
+
+You can also run **Rich Notes: Open as rich text** from the Command Palette on an open file, or create a fresh one with **Rich Notes: New note**. The same right-click menu has **Rich Notes: Sync to Notion** to link a note (see [Notion sync setup](#notion-sync-setup)).
+
+---
+
 ## Features
 
 ### ✍️ Notion-style editing, plain markdown on disk
