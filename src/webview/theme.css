@@ -69,6 +69,30 @@ body,
 }
 
 /*
+ * Floating "Copy" button shown when hovering a code block. Positioned as a
+ * fixed overlay by the webview script at the block's top-right.
+ */
+.rn-code-copy {
+  position: fixed;
+  z-index: 40;
+  display: none;
+  padding: 3px 10px;
+  font-family: var(--vscode-font-family);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
+  background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
+  border: 1px solid var(--vscode-widget-border, transparent);
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.9;
+}
+.rn-code-copy:hover {
+  opacity: 1;
+  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
+}
+
+/*
  * The empty-block placeholder ("Enter text or type '/' for commands"). BlockNote
  * colors it via --bn-colors-side-menu (a light gray that reads near-white on
  * dark themes); recolor it to VS Code's ghost/hint-text tone so it clearly reads

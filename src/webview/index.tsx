@@ -315,17 +315,151 @@ function Editor() {
       },
     });
 
+    // 3. Strip link marks inside code blocks. BlockNote's `codeBlock` node is
+    //    `content: "inline"`, so the tiptap Link extension's autolink turns URLs
+    //    typed/pasted into code (e.g. `registry.example.com/img:1.0`) into links.
+    //    They then serialize as `[url](https://url)`, corrupting commands copied
+    //    out of a code block. Code should be literal text, so we remove any link
+    //    mark that lands in a code block on the transaction that introduced it.
+    //    This also repairs a note on load: the sidecar's link-marked blocks are
+    //    cleaned by the transaction that applies them.
+    const stripLinkKey = new PluginKey("rnStripLinkInCode");
+    const stripLinkInCode = new Plugin({
+      key: stripLinkKey,
+      appendTransaction: (trs, _oldState, newState) => {
+        if (!trs.some((t) => t.docChanged)) {
+          return null;
+        }
+        const linkMark = newState.schema.marks.link;
+        if (!linkMark) {
+          return null;
+        }
+        let tr: any = null;
+        newState.doc.descendants((node, pos) => {
+          if (node.type.name === "codeBlock") {
+            const from = pos + 1;
+            const to = pos + node.nodeSize - 1;
+            if (to > from && newState.doc.rangeHasMark(from, to, linkMark)) {
+              tr = tr ?? newState.tr;
+              tr.removeMark(from, to, linkMark);
+            }
+            return false; // code block content is leaf-like for our purposes
+          }
+          return true;
+        });
+        return tr;
+      },
+    });
+
     tt.registerPlugin(keepMenu);
     tt.registerPlugin(slashHint);
+    tt.registerPlugin(stripLinkInCode);
     return () => {
       try {
         tt.unregisterPlugin(keepMenuKey);
         tt.unregisterPlugin(slashHintKey);
+        tt.unregisterPlugin(stripLinkKey);
       } catch {
         /* editor already torn down */
       }
     };
   }, [editor]);
+
+  // Floating "Copy" button for code blocks. BlockNote 0.47 code blocks have no
+  // copy affordance, so we show a single hover button (Notion/GitHub-style) that
+  // copies the block's raw text — with real line breaks — to the clipboard.
+  // Clipboard access in a VS Code webview is unreliable, so the host writes it
+  // via `vscode.env.clipboard`.
+  useEffect(() => {
+    const root = document.getElementById("root");
+    if (!root) {
+      return;
+    }
+    const CODE_SELECTOR = '[data-content-type="codeBlock"]';
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "rn-code-copy";
+    btn.textContent = "Copy";
+    btn.setAttribute("aria-label", "Copy code");
+    btn.style.display = "none";
+    document.body.appendChild(btn);
+
+    let codeText = "";
+    let resetLabel: ReturnType<typeof setTimeout> | null = null;
+    let hideTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const cancelHide = () => {
+      if (hideTimer) {
+        clearTimeout(hideTimer);
+        hideTimer = null;
+      }
+    };
+    const scheduleHide = () => {
+      cancelHide();
+      hideTimer = setTimeout(() => {
+        btn.style.display = "none";
+      }, 150);
+    };
+
+    const showFor = (block: HTMLElement) => {
+      cancelHide();
+      const code = block.querySelector("code") ?? block;
+      codeText = (code.textContent ?? "").replace(/\n$/, "");
+      const r = block.getBoundingClientRect();
+      btn.style.display = "block";
+      btn.style.top = `${Math.round(r.top) + 8}px`;
+      btn.style.left = `${Math.round(r.right) - btn.offsetWidth - 12}px`;
+    };
+
+    const onOver = (e: Event) => {
+      const target = e.target as Element | null;
+      const block = target?.closest?.(CODE_SELECTOR) as HTMLElement | null;
+      if (block) {
+        showFor(block);
+      }
+    };
+    const onOut = (e: MouseEvent) => {
+      const to = e.relatedTarget as Element | null;
+      if (to === btn || to?.closest?.(CODE_SELECTOR)) {
+        return;
+      }
+      scheduleHide();
+    };
+
+    btn.addEventListener("mouseenter", cancelHide);
+    btn.addEventListener("mouseleave", scheduleHide);
+    // Keep the editor selection when clicking the button.
+    btn.addEventListener("mousedown", (e) => e.preventDefault());
+    btn.addEventListener("click", () => {
+      vscode.postMessage({ type: "copyCode", text: codeText });
+      btn.textContent = "Copied!";
+      if (resetLabel) {
+        clearTimeout(resetLabel);
+      }
+      resetLabel = setTimeout(() => {
+        btn.textContent = "Copy";
+      }, 1200);
+    });
+    const onScroll = () => {
+      btn.style.display = "none";
+    };
+    root.addEventListener("mouseover", onOver);
+    root.addEventListener("mouseout", onOut);
+    // A fixed-position button goes stale on scroll; hide it and let the next
+    // hover reposition it.
+    window.addEventListener("scroll", onScroll, true);
+
+    return () => {
+      root.removeEventListener("mouseover", onOver);
+      root.removeEventListener("mouseout", onOut);
+      window.removeEventListener("scroll", onScroll, true);
+      if (resetLabel) {
+        clearTimeout(resetLabel);
+      }
+      cancelHide();
+      btn.remove();
+    };
+  }, []);
 
   // True while we apply content from the host, so the resulting onChange is
   // not echoed back as a user edit.

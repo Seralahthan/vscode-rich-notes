@@ -2,6 +2,18 @@
 
 All notable changes to **Rich Notes** are documented here.
 
+## 0.4.3
+
+### Editor
+- **No auto-linking inside code blocks**: URLs typed or pasted into a code block
+  (e.g. `registry.example.com/img:1.0`) stay plain text instead of becoming
+  links. Previously they were auto-linked and serialized as `[url](https://url)`,
+  which corrupted commands copied out of a code block. Existing notes are
+  repaired the next time they're opened and edited.
+- **Copy button on code blocks**: hovering a code block shows a **Copy** button
+  that copies the block's raw text — with line breaks intact — ready to paste
+  straight into a terminal.
+
 ## 0.4.2
 
 ### Docs

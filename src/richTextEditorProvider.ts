@@ -162,6 +162,13 @@ export class RichNotesEditorProvider implements vscode.CustomTextEditorProvider 
           // Webview confirmed it ingested the content we pushed.
           updatingFromDocument = false;
           break;
+        case "copyCode":
+          // Copy a code block's raw text via the host — clipboard access from a
+          // webview is unreliable, but vscode.env.clipboard always works.
+          if (typeof msg.text === "string") {
+            await vscode.env.clipboard.writeText(msg.text);
+          }
+          break;
       }
     });
 
