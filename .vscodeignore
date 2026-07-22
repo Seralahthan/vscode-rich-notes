@@ -1,5 +1,11 @@
 .vscode/**
 .claude/**
+.agents/**
+.claude-flow/**
+.swarm/**
+ruvector.db
+skills-lock.json
+CLAUDE.md
 src/**
 scripts/**
 node_modules/**
