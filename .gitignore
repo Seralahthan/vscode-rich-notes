@@ -8,3 +8,6 @@ media/webview.css.map
 
 # Full-fidelity sidecars generated next to notes during testing
 *.blocks.json
+
+# Auto-generated agent-orchestration instructions (not curated project guidance)
+CLAUDE.md
