@@ -129,6 +129,15 @@ export class RichNotesEditorProvider implements vscode.CustomTextEditorProvider 
             await vscode.env.clipboard.writeText(msg.text);
           }
           break;
+        case "openExternal":
+          if (typeof msg.url === "string") {
+            try {
+              await vscode.env.openExternal(vscode.Uri.parse(msg.url));
+            } catch {
+              /* invalid url */
+            }
+          }
+          break;
       }
     });
 
