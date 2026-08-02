@@ -96,6 +96,78 @@ export function normalizeTableRows(md: string): string {
   return lines.join("\n");
 }
 
+/**
+ * Canonical form WRITTEN to disk (distinct from `canonicalizeMarkdown`, which is
+ * the looser comparator used only for change detection). Keeps the file clean
+ * and stable/idempotent across saves — normalizes list markers to "-", tightens
+ * loose lists, canonicalizes table padding and `<br/>` spacing — but PRESERVES
+ * `<br/>` lines (intentional spacing) and code-fence language labels. Fence-aware
+ * so code content is never rewritten.
+ */
+export function canonicalizeForFile(md: string): string {
+  const isListItem = (l: string) => /^\s*([-*+]|\d+[.)])\s+/.test(l);
+  const isBlank = (l: string) => l.trim() === "";
+
+  let inFence = false;
+  let marker = "";
+  const lines = normalizeTableRows(md)
+    .replace(/[ \t]+$/gm, "")
+    .split("\n")
+    .map((l) => {
+      const fence = /^(\s*)(`{3,}|~{3,})(.*)$/.exec(l);
+      if (fence) {
+        if (!inFence) {
+          inFence = true;
+          marker = fence[2][0];
+        } else if (fence[2][0] === marker && fence[3].trim() === "") {
+          inFence = false;
+        }
+        return l;
+      }
+      if (inFence) {
+        return l; // never rewrite code content
+      }
+      // normalize `<br>`/`<br />` spacing lines to a single `<br/>` form
+      if (/^\s*<br\s*\/?>\s*$/i.test(l)) {
+        return l.replace(/<br\s*\/?>/i, "<br/>");
+      }
+      return l.replace(/^(\s*)[*+](\s+)/, "$1-$2"); // list markers -> "-"
+    });
+
+  // Tighten loose lists: drop a blank line strictly between two list items.
+  // Re-tracks fence state so a blank line inside a code block is never dropped.
+  inFence = false;
+  marker = "";
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const fence = /^(\s*)(`{3,}|~{3,})(.*)$/.exec(lines[i]);
+    if (fence) {
+      if (!inFence) {
+        inFence = true;
+        marker = fence[2][0];
+      } else if (fence[2][0] === marker && fence[3].trim() === "") {
+        inFence = false;
+      }
+      out.push(lines[i]);
+      continue;
+    }
+    if (!inFence && isBlank(lines[i])) {
+      const prev = out[out.length - 1];
+      let j = i + 1;
+      while (j < lines.length && isBlank(lines[j])) {
+        j++;
+      }
+      const next = j < lines.length ? lines[j] : null;
+      if (prev !== undefined && next !== null && isListItem(prev) && isListItem(next)) {
+        continue;
+      }
+    }
+    out.push(lines[i]);
+  }
+
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").replace(/\n*$/, "\n");
+}
+
 export function canonicalizeMarkdown(md: string): string {
   const isListItem = (l: string) => /^\s*([-*+]|\d+[.)])\s+/.test(l);
   const isBlank = (l: string) => l.trim() === "";

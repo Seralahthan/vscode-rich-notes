@@ -38,14 +38,6 @@
     "onStartupFinished"
   ],
   "contributes": {
-    "configurationDefaults": {
-      "files.exclude": {
-        "**/*.md.blocks.json": true
-      },
-      "search.exclude": {
-        "**/*.md.blocks.json": true
-      }
-    },
     "customEditors": [
       {
         "viewType": "richNotes.editor",
@@ -250,8 +242,6 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "@types/react": "^18.3.0",
-    "@types/react-dom": "^18.3.0",
     "@types/vscode": "^1.85.0",
     "esbuild": "^0.25.0",
     "typescript": "^5.4.0"
@@ -260,15 +250,10 @@
     "katex": "^0.16.21"
   },
   "dependencies": {
-    "@blocknote/core": "^0.47.0",
-    "@blocknote/mantine": "^0.47.0",
-    "@blocknote/react": "^0.47.0",
     "@milkdown/crepe": "^7.21.3",
     "@notionhq/client": "^5.22.0",
     "@tryfabric/martian": "^1.2.4",
     "notion-to-md": "^3.1.9",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
     "yaml": "^2.9.0"
   }
 }

@@ -8,141 +8,56 @@ body,
   color: var(--vscode-editor-foreground);
 }
 
-/* Let the editor fill the pane and give comfortable page-like margins. */
-.bn-container,
-.bn-editor {
+/* Let the Milkdown editor fill the pane with a comfortable page column. */
+.milkdown {
   height: 100%;
+  overflow: auto;
 }
-
-.bn-editor {
-  padding-top: 24px;
-  max-width: 1100px;
+.milkdown .editor {
+  max-width: 860px;
   margin: 0 auto;
-  /*
-   * A comfortable fixed prose base — close to the VS Code markdown preview.
-   * (We intentionally don't inherit `--vscode-editor-font-size`: that's the
-   * code-editor font, which is often set small and reads too tight for prose.)
-   */
+  padding: 24px 32px 40vh;
   font-size: 15px;
 }
 
 /*
- * Flatten BlockNote's heading scale (its default h1 = 3em / h2 = 2em / h3 =
- * 1.3em dwarfs the body) to the VS Code markdown-preview proportions, so body
- * text stays prominent relative to headings. `!important` overrides BlockNote's
- * animated `--level`/`--prev-level` font-size variable.
+ * Map Crepe's `--crepe-color-*` theme tokens onto VS Code's theme variables so
+ * the editor tracks the active light/dark theme automatically. Imported after
+ * Crepe's frame theme, so these override the frame defaults.
  */
-.bn-block-content[data-content-type="heading"][data-level="1"] {
-  font-size: 2em !important;
-}
-.bn-block-content[data-content-type="heading"][data-level="2"] {
-  font-size: 1.5em !important;
-}
-.bn-block-content[data-content-type="heading"][data-level="3"] {
-  font-size: 1.25em !important;
-}
-
-/* Map BlockNote's surfaces onto the active VS Code theme. */
-.bn-container {
-  --bn-colors-editor-background: var(--vscode-editor-background);
-  --bn-colors-editor-text: var(--vscode-editor-foreground);
-  --bn-colors-menu-background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
-  --bn-colors-menu-text: var(--vscode-menu-foreground, var(--vscode-editor-foreground));
-  --bn-colors-tooltip-background: var(--vscode-editorWidget-background);
-  --bn-colors-tooltip-text: var(--vscode-editor-foreground);
-  --bn-colors-hovered-background: var(--vscode-list-hoverBackground);
-  --bn-colors-selected-background: var(--vscode-list-activeSelectionBackground);
-  --bn-colors-selected-text: var(--vscode-list-activeSelectionForeground);
-  --bn-colors-border: var(--vscode-widget-border, var(--vscode-editorWidget-border));
+.milkdown {
+  --crepe-color-background: var(--vscode-editor-background);
+  --crepe-color-on-background: var(--vscode-editor-foreground);
+  --crepe-color-surface: var(--vscode-editor-background);
+  --crepe-color-surface-low: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  --crepe-color-on-surface: var(--vscode-editor-foreground);
+  --crepe-color-on-surface-variant: var(--vscode-descriptionForeground);
+  --crepe-color-outline: var(--vscode-widget-border, var(--vscode-editorWidget-border));
+  --crepe-color-primary: var(--vscode-focusBorder);
+  --crepe-color-secondary: var(--vscode-editorWidget-background);
+  --crepe-color-on-secondary: var(--vscode-editor-foreground);
+  --crepe-color-inverse: var(--vscode-editorHoverWidget-background);
+  --crepe-color-on-inverse: var(--vscode-editorHoverWidget-foreground);
+  --crepe-color-inline-code: var(--vscode-textPreformat-foreground);
+  --crepe-color-error: var(--vscode-errorForeground);
+  --crepe-color-hover: var(--vscode-list-hoverBackground);
+  --crepe-color-selected: var(--vscode-list-activeSelectionBackground);
+  --crepe-color-inline-area: var(--vscode-editor-selectionBackground);
+  --crepe-font-title: var(--vscode-font-family);
+  --crepe-font-default: var(--vscode-font-family);
+  --crepe-font-code: var(--vscode-editor-font-family, monospace);
 }
 
 /*
- * Slash-menu "Type to search" ghost hint, rendered as a widget decoration right
- * after a lone "/" (Notion-style). Non-interactive, muted, disappears as soon as
- * the user types a query.
+ * Flatten Crepe's heading scale toward the VS Code markdown-preview proportions,
+ * so body text stays prominent relative to headings.
  */
-.rn-slash-hint {
-  color: var(--vscode-editorGhostText-foreground, var(--vscode-descriptionForeground));
-  font-style: italic;
-  pointer-events: none;
-  user-select: none;
+.milkdown .editor h1 {
+  font-size: 2em;
 }
-
-/*
- * Floating "Copy" button shown when hovering a code block. Positioned as a
- * fixed overlay by the webview script at the block's top-right.
- */
-.rn-code-copy {
-  position: fixed;
-  z-index: 40;
-  display: none;
-  padding: 3px 10px;
-  font-family: var(--vscode-font-family);
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
-  background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
-  border: 1px solid var(--vscode-widget-border, transparent);
-  border-radius: 4px;
-  cursor: pointer;
-  opacity: 0.9;
+.milkdown .editor h2 {
+  font-size: 1.5em;
 }
-.rn-code-copy:hover {
-  opacity: 1;
-  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
-}
-
-/*
- * The empty-block placeholder ("Enter text or type '/' for commands"). BlockNote
- * colors it via --bn-colors-side-menu (a light gray that reads near-white on
- * dark themes); recolor it to VS Code's ghost/hint-text tone so it clearly reads
- * as a hint, not real content — and adapts to any theme.
- */
-.bn-inline-content:has(> .ProseMirror-trailingBreak):before {
-  color: var(
-    --vscode-editorGhostText-foreground,
-    var(--vscode-descriptionForeground, var(--vscode-disabledForeground))
-  ) !important;
-}
-
-/*
- * Nested list items should read as indented sub-bullets (Notion-style), not as
- * the quote-like vertical bar BlockNote draws for nested blocks. We keep that
- * bar for nested paragraphs, but remove it when the nested block is a list item.
- */
-.bn-block-group
-  .bn-block-group
-  .bn-block-outer:not([data-prev-depth-changed]):has(> .bn-block > .bn-block-content[data-content-type="bulletListItem"])::before,
-.bn-block-group
-  .bn-block-group
-  .bn-block-outer:not([data-prev-depth-changed]):has(> .bn-block > .bn-block-content[data-content-type="numberedListItem"])::before,
-.bn-block-group
-  .bn-block-group
-  .bn-block-outer:not([data-prev-depth-changed]):has(> .bn-block > .bn-block-content[data-content-type="checkListItem"])::before {
-  border-left: none;
-}
-
-/*
- * Blockquotes: a single transparent left-bar look. BlockNote's Mantine theme
- * styles the inner <blockquote> like a filled card (background + its own border
- * + a decorative quote icon); we strip all of that and draw exactly one bar.
- */
-[data-content-type="quote"],
-[data-content-type="quote"] blockquote {
-  background: transparent !important;
-}
-[data-content-type="quote"] blockquote {
-  border: none !important;
-  border-inline-start: none !important;
-  border-left: 3px solid
-    var(--vscode-textBlockQuote-border, var(--vscode-textSeparator-foreground, #6a737d)) !important;
-  margin: 0 !important;
-  padding: 0 0 0 1em !important;
-  color: var(--vscode-editor-foreground);
-  font-style: italic;
-}
-[data-content-type="quote"] blockquote::before,
-[data-content-type="quote"] blockquote::after {
-  content: none !important;
-  display: none !important;
+.milkdown .editor h3 {
+  font-size: 1.25em;
 }

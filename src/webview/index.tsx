@@ -1,29 +1,7 @@
-import { StrictMode, useEffect, useRef, useState } from "react";
-import { createRoot } from "react-dom/client";
-import {
-  useCreateBlockNote,
-  useBlockNoteEditor,
-  useComponentsContext,
-  useEditorChange,
-  useEditorSelectionChange,
-  FormattingToolbar,
-  FormattingToolbarController,
-  BlockTypeSelect,
-  FileCaptionButton,
-  FileReplaceButton,
-  BasicTextStyleButton,
-  TextAlignButton,
-  ColorStyleButton,
-  CreateLinkButton,
-  NestBlockButton,
-  UnnestBlockButton,
-} from "@blocknote/react";
-import { BlockNoteView } from "@blocknote/mantine";
-import { en } from "@blocknote/core/locales";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
-import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import "@blocknote/core/fonts/inter.css";
-import "@blocknote/mantine/style.css";
+import { Crepe } from "@milkdown/crepe";
+import { canonicalizeForFile } from "../markdown";
+import "@milkdown/crepe/theme/common/style.css";
+import "@milkdown/crepe/theme/frame.css";
 import "./theme.css";
 
 // Minimal typing for the VS Code webview bridge.
@@ -32,617 +10,85 @@ declare function acquireVsCodeApi(): {
 };
 const vscode = acquireVsCodeApi();
 
-/**
- * BlockNote's markdown importer mishandles "loose" lists (items separated by
- * blank lines): it produces empty list items with the text demoted to a nested
- * paragraph. BlockNote's own exporter also writes loose lists, so its output
- * does not round-trip through its own parser. We tighten lists before parsing by
- * dropping blank lines that sit strictly between two list items, which makes the
- * parser produce the correct nested structure. Blank lines before a following
- * non-list paragraph are preserved.
- */
-function tightenMarkdownLists(md: string): string {
-  const lines = md.split("\n");
-  const isListItem = (l: string) => /^\s*([*+-]|\d+[.)])\s+/.test(l);
-  const isBlank = (l: string) => l.trim() === "";
-  const out: string[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (isBlank(lines[i])) {
-      const prev = out[out.length - 1];
-      let j = i + 1;
-      while (j < lines.length && isBlank(lines[j])) {
-        j++;
-      }
-      const next = j < lines.length ? lines[j] : null;
-      if (prev !== undefined && next !== null && isListItem(prev) && isListItem(next)) {
-        continue; // drop the blank line between two list items
-      }
-    }
-    out.push(lines[i]);
+const rootEl = () => document.getElementById("root")!;
+
+let crepe: Crepe | null = null;
+// True while we apply content pushed from the host, so the resulting
+// markdownUpdated events are not echoed back as user edits.
+let applyingRemote = false;
+// The canonical markdown the editor currently serializes to (change detection).
+let lastSerialized: string | null = null;
+let debounce: ReturnType<typeof setTimeout> | null = null;
+
+/** The editor's current content, canonicalized to the on-disk form. */
+function currentMarkdown(): string {
+  return crepe ? canonicalizeForFile(crepe.getMarkdown()) : "";
+}
+
+/** Debounced push of a user edit back to the host. */
+function scheduleEdit(): void {
+  if (debounce) {
+    clearTimeout(debounce);
   }
-  return out.join("\n");
-}
-
-/**
- * BlockNote serializes language-less code blocks with its default language
- * ("```text"). Markdown's plain fence is just "```", so we strip the default
- * language while leaving explicitly-chosen languages (e.g. "```javascript")
- * untouched.
- */
-function bareifyDefaultCodeFences(md: string): string {
-  return md.replace(/^(\s*)```text$/gm, "$1```");
-}
-
-/**
- * Canonical form written to disk: bare code fences, "-" list markers (not
- * BlockNote's "*"), tight lists, no trailing whitespace, single trailing
- * newline. This keeps saved files clean and byte-consistent with what
- * notion-to-md produces, so Notion round-trips don't create cosmetic diffs.
- * Idempotent: re-parsing and re-exporting yields the same output.
- */
-function canonicalizeOutput(md: string): string {
-  let out = bareifyDefaultCodeFences(md);
-  out = out.replace(/^(\s*)[*+](\s+)/gm, "$1-$2"); // list markers -> "-"
-  out = tightenMarkdownLists(out);
-  out = out.replace(/[ \t]+$/gm, "").replace(/\n{3,}/g, "\n\n");
-  return out.replace(/\n*$/, "\n"); // exactly one trailing newline
-}
-
-// Block types where Tab should NOT nest. Tab nesting is reserved for list items
-// (real markdown nesting); on these it would create structure markdown can't
-// express, so we suppress it.
-const NO_TAB_NEST = new Set(["paragraph", "heading", "quote"]);
-
-// Plain text of a block's inline content (ignores non-text inline nodes).
-function blockPlainText(block: { content?: unknown }): string {
-  const content = block.content;
-  if (!Array.isArray(content)) {
-    return "";
-  }
-  return content
-    .map((c: any) => (c?.type === "text" ? c.text ?? "" : ""))
-    .join("");
-}
-
-// A block whose inline content has no text.
-function isEmptyBlock(block: { content?: unknown }): boolean {
-  const content = block.content;
-  if (!Array.isArray(content)) {
-    return true;
-  }
-  return content.every(
-    (c: any) => c?.type === "text" && (c.text ?? "") === ""
-  ) || content.length === 0;
-}
-
-const LIST_TYPES = new Set([
-  "bulletListItem",
-  "numberedListItem",
-  "checkListItem",
-  "toggleListItem",
-]);
-
-// Intentional empty paragraphs (vertical spacing the user typed with Enter)
-// can't survive a plain-markdown round-trip — CommonMark collapses blank lines.
-// We serialize each empty paragraph as a `<br>` line, which renders as a blank
-// line in any markdown viewer, and restore it to an empty paragraph on load. A
-// plain-text sentinel bridges BlockNote's block<->markdown conversion so the
-// `<br>` is never escaped or reinterpreted by the serializer/parser.
-const BR_SENTINEL = "rnEmptyLineBrx9f3a";
-const BR_SENTINEL_LINE = new RegExp(`^[ \\t]*${BR_SENTINEL}[ \\t]*$`, "gm");
-const BR_LINE = /^[ \t]*<br\s*\/?>[ \t]*$/gim;
-
-function isEmptyParagraph(b: any): boolean {
-  return b?.type === "paragraph" && isEmptyBlock(b);
-}
-
-// Export: replace each empty paragraph with a sentinel-text paragraph, so it
-// serializes to a distinct line we can turn into `<br>`.
-function emptyParasToSentinel(blocks: any[]): any[] {
-  return blocks.map((b) => {
-    if (isEmptyParagraph(b)) {
-      return { ...b, content: [{ type: "text", text: BR_SENTINEL, styles: {} }] };
-    }
-    if (Array.isArray(b.children) && b.children.length) {
-      return { ...b, children: emptyParasToSentinel(b.children) };
-    }
-    return b;
-  });
-}
-
-// Import: turn sentinel-text paragraphs (parsed from `<br>` lines) back into
-// empty paragraphs so the editor shows the same spacing.
-function sentinelToEmptyParas(blocks: any[]): any[] {
-  return blocks.map((b) => {
-    if (b?.type === "paragraph" && blockPlainText(b) === BR_SENTINEL) {
-      return { ...b, content: [] };
-    }
-    if (Array.isArray(b.children) && b.children.length) {
-      return { ...b, children: sentinelToEmptyParas(b.children) };
-    }
-    return b;
-  });
-}
-
-/**
- * Custom formatting toolbar:
- *  - list items keep the Nest / Unnest (indent) buttons
- *  - other blocks (paragraph, heading, quote) get a Quote toggle instead,
- *    since indenting them can't be represented in markdown
- */
-function CustomToolbar() {
-  const editor = useBlockNoteEditor();
-  const Components = useComponentsContext()!;
-  const [blockType, setBlockType] = useState<string>("paragraph");
-
-  const syncBlockType = () => {
-    try {
-      setBlockType(editor.getTextCursorPosition().block.type);
-    } catch {
-      /* no cursor */
-    }
-  };
-  useEditorSelectionChange(syncBlockType);
-  useEditorChange(syncBlockType);
-
-  const isList = LIST_TYPES.has(blockType);
-  const isQuote = blockType === "quote";
-
-  const toggleQuote = () => {
-    const block = editor.getTextCursorPosition().block;
-    editor.updateBlock(block, { type: isQuote ? "paragraph" : "quote" });
-    editor.focus();
-  };
-
-  return (
-    <FormattingToolbar>
-      <BlockTypeSelect key="blockType" />
-      <FileCaptionButton key="fileCaption" />
-      <FileReplaceButton key="fileReplace" />
-      <BasicTextStyleButton basicTextStyle="bold" key="bold" />
-      <BasicTextStyleButton basicTextStyle="italic" key="italic" />
-      <BasicTextStyleButton basicTextStyle="underline" key="underline" />
-      <BasicTextStyleButton basicTextStyle="strike" key="strike" />
-      <TextAlignButton textAlignment="left" key="alignLeft" />
-      <TextAlignButton textAlignment="center" key="alignCenter" />
-      <TextAlignButton textAlignment="right" key="alignRight" />
-      <ColorStyleButton key="colors" />
-      {isList ? (
-        <>
-          <NestBlockButton key="nest" />
-          <UnnestBlockButton key="unnest" />
-        </>
-      ) : (
-        <Components.FormattingToolbar.Button
-          key="quote"
-          label="Quote"
-          mainTooltip={isQuote ? "Remove quote" : "Quote"}
-          isSelected={isQuote}
-          onClick={toggleQuote}
-        >
-          <QuoteIcon />
-        </Components.FormattingToolbar.Button>
-      )}
-      <CreateLinkButton key="link" />
-    </FormattingToolbar>
-  );
-}
-
-function QuoteIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M7 7h5v6c0 2.8-1.8 4.6-4.5 5l-.5-1.4c1.5-.4 2.3-1.2 2.4-2.6H7V7zm8 0h5v6c0 2.8-1.8 4.6-4.5 5l-.5-1.4c1.5-.4 2.3-1.2 2.4-2.6H15V7z" />
-    </svg>
-  );
-}
-
-function Editor() {
-  // Blank the "List" / "Toggle" placeholders shown in empty list items.
-  const editor = useCreateBlockNote({
-    dictionary: {
-      ...en,
-      placeholders: {
-        ...en.placeholders,
-        bulletListItem: "",
-        numberedListItem: "",
-        checkListItem: "",
-        toggleListItem: "",
-      },
-    },
-  });
-
-  // Register two ProseMirror plugins on the underlying editor (no dependency
-  // patch), to match Notion's slash-menu behavior:
-  //  1. Keep the slash menu open across a window switch. BlockNote core closes
-  //     it on any transaction carrying `blur` OR `focus` meta — the menu is
-  //     actually dropped when the window *regains* focus (the editor re-focuses).
-  //     We drop those focus/blur transactions only if they land right after an
-  //     OS-window focus change (app switch); a genuine click-away in the same
-  //     the slash menu is active (the block still starts with "/"). This keeps
-  //     the menu open across a tab/window switch — the editor blurs when it's
-  //     hidden and re-focuses on return, and BlockNote core would otherwise
-  //     close the menu on those focus/blur transactions. Selecting an item,
-  //     pressing Escape, or clicking (a `pointer` transaction) still close it,
-  //     since those aren't focus/blur. Effectively "keep the menu open while a
-  //     `/` is present," matching Notion.
-  //  2. Show a Notion-style "Type to search" ghost hint right after a lone "/".
-  useEffect(() => {
-    const tt = (editor as unknown as { _tiptapEditor?: any })._tiptapEditor;
-    if (!tt?.registerPlugin) {
-      return;
-    }
-    const keepMenuKey = new PluginKey("rnKeepMenuOnSwitch");
-    const keepMenu = new Plugin({
-      key: keepMenuKey,
-      filterTransaction: (tr) => {
-        if (tr.getMeta("blur") || tr.getMeta("focus")) {
-          try {
-            if (tr.selection.$from.parent.textContent.startsWith("/")) {
-              return false; // a slash query is active — don't let blur/focus close it
-            }
-          } catch {
-            /* no resolvable selection */
-          }
-        }
-        return true;
-      },
-    });
-
-    const slashHintKey = new PluginKey("rnSlashHint");
-    const slashHint = new Plugin({
-      key: slashHintKey,
-      props: {
-        decorations(state) {
-          const sel = state.selection;
-          // Only when the block holds exactly the trigger "/" (menu just opened,
-          // no query yet). Once the user types a query the hint disappears and
-          // the list filters, matching Notion.
-          if (!sel.empty || sel.$from.parent.textContent !== "/") {
-            return null;
-          }
-          const widget = Decoration.widget(
-            sel.from,
-            () => {
-              const span = document.createElement("span");
-              span.className = "rn-slash-hint";
-              span.textContent = "Type to search…";
-              return span;
-            },
-            { side: 1, ignoreSelection: true }
-          );
-          return DecorationSet.create(state.doc, [widget]);
-        },
-      },
-    });
-
-    // 3. Strip link marks inside code blocks. BlockNote's `codeBlock` node is
-    //    `content: "inline"`, so the tiptap Link extension's autolink turns URLs
-    //    typed/pasted into code (e.g. `registry.example.com/img:1.0`) into links.
-    //    They then serialize as `[url](https://url)`, corrupting commands copied
-    //    out of a code block. Code should be literal text, so we remove any link
-    //    mark that lands in a code block on the transaction that introduced it.
-    //    This also repairs a note on load: the sidecar's link-marked blocks are
-    //    cleaned by the transaction that applies them.
-    const stripLinkKey = new PluginKey("rnStripLinkInCode");
-    const stripLinkInCode = new Plugin({
-      key: stripLinkKey,
-      appendTransaction: (trs, _oldState, newState) => {
-        if (!trs.some((t) => t.docChanged)) {
-          return null;
-        }
-        const linkMark = newState.schema.marks.link;
-        if (!linkMark) {
-          return null;
-        }
-        let tr: any = null;
-        newState.doc.descendants((node, pos) => {
-          if (node.type.name === "codeBlock") {
-            const from = pos + 1;
-            const to = pos + node.nodeSize - 1;
-            if (to > from && newState.doc.rangeHasMark(from, to, linkMark)) {
-              tr = tr ?? newState.tr;
-              tr.removeMark(from, to, linkMark);
-            }
-            return false; // code block content is leaf-like for our purposes
-          }
-          return true;
-        });
-        return tr;
-      },
-    });
-
-    tt.registerPlugin(keepMenu);
-    tt.registerPlugin(slashHint);
-    tt.registerPlugin(stripLinkInCode);
-    return () => {
-      try {
-        tt.unregisterPlugin(keepMenuKey);
-        tt.unregisterPlugin(slashHintKey);
-        tt.unregisterPlugin(stripLinkKey);
-      } catch {
-        /* editor already torn down */
-      }
-    };
-  }, [editor]);
-
-  // Floating "Copy" button for code blocks. BlockNote 0.47 code blocks have no
-  // copy affordance, so we show a single hover button (Notion/GitHub-style) that
-  // copies the block's raw text — with real line breaks — to the clipboard.
-  // Clipboard access in a VS Code webview is unreliable, so the host writes it
-  // via `vscode.env.clipboard`.
-  useEffect(() => {
-    const root = document.getElementById("root");
-    if (!root) {
-      return;
-    }
-    const CODE_SELECTOR = '[data-content-type="codeBlock"]';
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "rn-code-copy";
-    btn.textContent = "Copy";
-    btn.setAttribute("aria-label", "Copy code");
-    btn.style.display = "none";
-    document.body.appendChild(btn);
-
-    let codeText = "";
-    let resetLabel: ReturnType<typeof setTimeout> | null = null;
-    let hideTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const cancelHide = () => {
-      if (hideTimer) {
-        clearTimeout(hideTimer);
-        hideTimer = null;
-      }
-    };
-    const scheduleHide = () => {
-      cancelHide();
-      hideTimer = setTimeout(() => {
-        btn.style.display = "none";
-      }, 150);
-    };
-
-    const showFor = (block: HTMLElement) => {
-      cancelHide();
-      const code = block.querySelector("code") ?? block;
-      codeText = (code.textContent ?? "").replace(/\n$/, "");
-      const r = block.getBoundingClientRect();
-      btn.style.display = "block";
-      btn.style.top = `${Math.round(r.top) + 8}px`;
-      btn.style.left = `${Math.round(r.right) - btn.offsetWidth - 12}px`;
-    };
-
-    const onOver = (e: Event) => {
-      const target = e.target as Element | null;
-      const block = target?.closest?.(CODE_SELECTOR) as HTMLElement | null;
-      if (block) {
-        showFor(block);
-      }
-    };
-    const onOut = (e: MouseEvent) => {
-      const to = e.relatedTarget as Element | null;
-      if (to === btn || to?.closest?.(CODE_SELECTOR)) {
-        return;
-      }
-      scheduleHide();
-    };
-
-    btn.addEventListener("mouseenter", cancelHide);
-    btn.addEventListener("mouseleave", scheduleHide);
-    // Keep the editor selection when clicking the button.
-    btn.addEventListener("mousedown", (e) => e.preventDefault());
-    btn.addEventListener("click", () => {
-      vscode.postMessage({ type: "copyCode", text: codeText });
-      btn.textContent = "Copied!";
-      if (resetLabel) {
-        clearTimeout(resetLabel);
-      }
-      resetLabel = setTimeout(() => {
-        btn.textContent = "Copy";
-      }, 1200);
-    });
-    const onScroll = () => {
-      btn.style.display = "none";
-    };
-    root.addEventListener("mouseover", onOver);
-    root.addEventListener("mouseout", onOut);
-    // A fixed-position button goes stale on scroll; hide it and let the next
-    // hover reposition it.
-    window.addEventListener("scroll", onScroll, true);
-
-    return () => {
-      root.removeEventListener("mouseover", onOver);
-      root.removeEventListener("mouseout", onOut);
-      window.removeEventListener("scroll", onScroll, true);
-      if (resetLabel) {
-        clearTimeout(resetLabel);
-      }
-      cancelHide();
-      btn.remove();
-    };
-  }, []);
-
-  // True while we apply content from the host, so the resulting onChange is
-  // not echoed back as a user edit.
-  const applyingRemote = useRef(false);
-  const debounce = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // The canonical markdown the editor's current blocks serialize to.
-  const lastSerialized = useRef<string | null>(null);
-  // The canonical blocks JSON currently in the editor. We compare blocks (not
-  // just markdown) so structural edits markdown can't express (e.g. nested
-  // paragraphs) are still detected and persisted to the sidecar.
-  const lastBlocks = useRef<string | null>(null);
-
-  // Serialize the current document to markdown (with our fence fix). Used both
-  // for change detection and for what we write to the .md file.
-  const toMarkdown = async () => {
-    // Drop trailing empty paragraphs (BlockNote's end-of-document cursor line
-    // plus any accumulated blanks) so notes don't export spurious trailing
-    // `<br/>`. Empty lines at end-of-file carry no meaning — intentional spacing
-    // is always *between* content blocks, and that is preserved.
-    let end = editor.document.length;
-    while (end > 0 && isEmptyParagraph(editor.document[end - 1])) {
-      end--;
-    }
-    const blocks = editor.document.slice(0, end);
-    const raw = await editor.blocksToMarkdownLossy(emptyParasToSentinel(blocks));
-    return canonicalizeOutput(raw.replace(BR_SENTINEL_LINE, "<br/>"));
-  };
-
-  // Load content from the host. Prefer the exact sidecar blocks when present;
-  // otherwise parse the markdown.
-  const setContent = async (markdown: string, blocksJson: string | null) => {
-    if (blocksJson != null && blocksJson === lastBlocks.current) {
-      vscode.postMessage({ type: "acked" });
-      return;
-    }
-    if (blocksJson == null && markdown === lastSerialized.current) {
-      vscode.postMessage({ type: "acked" });
-      return;
-    }
-    applyingRemote.current = true;
-    try {
-      const blocks =
-        blocksJson != null
-          ? JSON.parse(blocksJson)
-          : sentinelToEmptyParas(
-              await editor.tryParseMarkdownToBlocks(
-                tightenMarkdownLists(markdown.replace(BR_LINE, BR_SENTINEL))
-              )
-            );
-      editor.replaceBlocks(
-        editor.document,
-        blocks.length > 0 ? blocks : [{ type: "paragraph" }]
-      );
-      lastSerialized.current = await toMarkdown();
-      lastBlocks.current = JSON.stringify(editor.document);
-    } finally {
-      setTimeout(() => {
-        applyingRemote.current = false;
-        vscode.postMessage({ type: "acked" });
-      }, 0);
-    }
-  };
-
-  const pushEdit = async () => {
-    const markdown = await toMarkdown();
-    const blocksJson = JSON.stringify(editor.document);
-    if (markdown === lastSerialized.current && blocksJson === lastBlocks.current) {
+  debounce = setTimeout(() => {
+    const markdown = currentMarkdown();
+    if (markdown === lastSerialized) {
       return; // nothing changed
     }
-    lastSerialized.current = markdown;
-    lastBlocks.current = blocksJson;
-    vscode.postMessage({ type: "edit", text: markdown, blocks: blocksJson });
-  };
-
-  useEffect(() => {
-    const onMessage = (event: MessageEvent) => {
-      const msg = event.data;
-      if (msg && msg.type === "setContent") {
-        void setContent(
-          String(msg.text ?? ""),
-          typeof msg.blocks === "string" ? msg.blocks : null
-        );
-      }
-    };
-
-    // Capture phase so we intercept before BlockNote's ProseMirror keymap runs.
-    const onKeyDownCapture = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) {
-        return;
-      }
-
-      // Markdown shortcut: typing the third backtick at the start of a
-      // paragraph (content is exactly "``") turns the block into a code block,
-      // mirroring the "- " → bullet rule. BlockNote otherwise only offers code
-      // blocks via the "/" menu. Intentionally no language preset: it adds no
-      // local rendering (syntax highlighting isn't enabled) and its language
-      // label mismatches Notion's spelling (js↔javascript), causing false
-      // sync conflicts. Pick a language from the block's dropdown if needed.
-      if (e.key === "`") {
-        try {
-          const block = editor.getTextCursorPosition().block;
-          if (block && block.type === "paragraph" && blockPlainText(block) === "``") {
-            e.preventDefault();
-            e.stopPropagation();
-            editor.updateBlock(block, { type: "codeBlock", content: [] });
-            editor.setTextCursorPosition(block, "end");
-            editor.focus();
-          }
-        } catch {
-          /* no cursor */
-        }
-        return;
-      }
-
-      // Suppress Tab-nesting on non-list blocks (paragraph/heading/quote) —
-      // markdown can't express an indented paragraph.
-      if (e.key === "Tab" && !e.shiftKey) {
-        try {
-          const block = editor.getTextCursorPosition().block;
-          if (block && NO_TAB_NEST.has(block.type)) {
-            e.preventDefault();
-            e.stopPropagation();
-          }
-        } catch {
-          /* no cursor */
-        }
-        return;
-      }
-
-      // Enter on an EMPTY list item: outdent one level instead of BlockNote's
-      // default (turning it into a paragraph stuck at the nested depth, which
-      // markdown can't represent). When already at the top level, exit the list
-      // by becoming a plain paragraph.
-      if (e.key === "Enter" && !e.shiftKey) {
-        try {
-          const block = editor.getTextCursorPosition().block;
-          if (block && LIST_TYPES.has(block.type) && isEmptyBlock(block)) {
-            e.preventDefault();
-            e.stopPropagation();
-            if (editor.canUnnestBlock()) {
-              editor.unnestBlock();
-            } else {
-              editor.updateBlock(block, { type: "paragraph" });
-            }
-          }
-        } catch {
-          /* no cursor */
-        }
-      }
-    };
-
-    window.addEventListener("message", onMessage);
-    window.addEventListener("keydown", onKeyDownCapture, true);
-    vscode.postMessage({ type: "ready" });
-    return () => {
-      window.removeEventListener("message", onMessage);
-      window.removeEventListener("keydown", onKeyDownCapture, true);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  return (
-    <BlockNoteView
-      editor={editor}
-      formattingToolbar={false}
-      onChange={() => {
-        if (applyingRemote.current) {
-          return;
-        }
-        if (debounce.current) {
-          clearTimeout(debounce.current);
-        }
-        debounce.current = setTimeout(() => void pushEdit(), 250);
-      }}
-    >
-      <FormattingToolbarController formattingToolbar={CustomToolbar} />
-    </BlockNoteView>
-  );
+    lastSerialized = markdown;
+    vscode.postMessage({ type: "edit", text: markdown });
+  }, 250);
 }
 
-const root = createRoot(document.getElementById("root")!);
-root.render(
-  <StrictMode>
-    <Editor />
-  </StrictMode>
-);
+/** (Re)create the Crepe editor with the given markdown as its content. */
+async function mountCrepe(markdown: string): Promise<void> {
+  if (crepe) {
+    await crepe.destroy();
+    crepe = null;
+  }
+  rootEl().innerHTML = "";
+  const c = new Crepe({ root: rootEl(), defaultValue: markdown });
+  c.on((listener) => {
+    listener.markdownUpdated(() => {
+      if (!applyingRemote) {
+        scheduleEdit();
+      }
+    });
+  });
+  await c.create();
+  crepe = c;
+}
+
+/**
+ * Apply content from the host. Crepe has no in-place "replace all", so we
+ * recreate the editor — remote pushes (initial load, external file change,
+ * Notion pull) are infrequent, so the cost is acceptable.
+ */
+async function setContent(markdown: string): Promise<void> {
+  const canon = canonicalizeForFile(markdown);
+  if (canon === lastSerialized && crepe) {
+    vscode.postMessage({ type: "acked" });
+    return; // already showing this content
+  }
+  applyingRemote = true;
+  try {
+    await mountCrepe(markdown);
+    lastSerialized = currentMarkdown();
+  } finally {
+    // Let the create-time markdownUpdated events settle before re-enabling edit
+    // echoes.
+    setTimeout(() => {
+      applyingRemote = false;
+      vscode.postMessage({ type: "acked" });
+    }, 0);
+  }
+}
+
+window.addEventListener("message", (event: MessageEvent) => {
+  const msg = event.data;
+  if (msg && msg.type === "setContent") {
+    void setContent(String(msg.text ?? ""));
+  }
+});
+
+vscode.postMessage({ type: "ready" });

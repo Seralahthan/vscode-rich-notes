@@ -1,18 +1,15 @@
 import * as vscode from "vscode";
-import { sidecarMarkdownHash, readSidecar, writeSidecar } from "./sidecar";
+import { parseNote, serializeNote } from "./frontmatter";
 import { checkRemoteOnOpen, isCancellation } from "./sync";
 
 /**
- * A CustomTextEditor that renders a markdown document with the BlockNote
- * Notion-style block editor (running as a React app inside the webview).
+ * A CustomTextEditor that renders a markdown document with the Milkdown (Crepe)
+ * editor running as a webview app.
  *
- * The .md file stays plain, readable markdown (normal save / dirty / undo). To
- * preserve structures markdown cannot express (nested paragraphs, etc.) without
- * data loss, BlockNote's exact blocks are mirrored to a sidecar file
- * "<name>.md.blocks.json" alongside it. The sidecar records a hash of the
- * markdown it corresponds to; on load we restore the exact blocks only when that
- * hash still matches the .md (otherwise the .md was edited elsewhere and we fall
- * back to parsing the markdown).
+ * The `.md` file is the single source of truth — Milkdown round-trips markdown
+ * losslessly, so there is no fidelity sidecar. A note's Notion link lives in the
+ * file's YAML frontmatter; the host strips the frontmatter before the editor
+ * sees it and re-attaches it on save, so the editor only ever shows the body.
  */
 export class RichNotesEditorProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = "richNotes.editor";
@@ -73,49 +70,19 @@ export class RichNotesEditorProvider implements vscode.CustomTextEditorProvider 
       }, delay);
     };
 
-    const readSidecarBlocks = async (markdown: string): Promise<string | null> => {
-      const sc = await readSidecar(document.uri);
-      if (!sc || !Array.isArray(sc.blocks) || sc.blocks.length === 0) {
-        return null;
-      }
-      // Restore the exact blocks when the hash still matches the .md, OR when the
-      // .md is empty/whitespace: an external truncation (bad revert, git, etc.)
-      // shouldn't discard content that survives only in the sidecar — there is
-      // nothing to fall back to, so the sidecar is authoritative.
-      if (
-        sc.markdownHash === sidecarMarkdownHash(markdown) ||
-        markdown.trim() === ""
-      ) {
-        return JSON.stringify(sc.blocks);
-      }
-      return null;
-    };
-
-    // Persist blocks, preserving any existing Notion link state.
-    const persistBlocks = async (markdown: string, blocksJson: string) => {
-      try {
-        const existing = await readSidecar(document.uri);
-        await writeSidecar(document.uri, {
-          version: 1,
-          markdownHash: sidecarMarkdownHash(markdown),
-          blocks: JSON.parse(blocksJson),
-          notion: existing?.notion,
-        });
-      } catch (err) {
-        console.error("Rich Notes: failed to write sidecar", err);
-      }
-    };
-
-    const postDocumentToWebview = async () => {
+    // Send the note's body (frontmatter stripped) to the editor.
+    const postDocumentToWebview = () => {
       updatingFromDocument = true;
-      const text = document.getText();
-      const blocks = await readSidecarBlocks(text);
-      webview.postMessage({ type: "setContent", text, blocks });
+      const { body } = parseNote(document.getText());
+      webview.postMessage({ type: "setContent", text: body });
     };
 
-    // Apply markdown coming from the webview back into the TextDocument.
-    const applyEditFromWebview = async (text: string) => {
-      if (text === document.getText()) {
+    // Apply an edited body from the webview: re-attach the current frontmatter
+    // (Notion link + any user keys) and write the full document back.
+    const applyEditFromWebview = async (body: string) => {
+      const { link, frontmatter } = parseNote(document.getText());
+      const full = serializeNote(body, link, frontmatter);
+      if (full === document.getText()) {
         return;
       }
       applyingFromWebview = true;
@@ -125,7 +92,7 @@ export class RichNotesEditorProvider implements vscode.CustomTextEditorProvider 
           document.positionAt(0),
           document.positionAt(document.getText().length)
         );
-        edit.replace(document.uri, fullRange, text);
+        edit.replace(document.uri, fullRange, full);
         await vscode.workspace.applyEdit(edit);
       } finally {
         applyingFromWebview = false;
@@ -137,25 +104,20 @@ export class RichNotesEditorProvider implements vscode.CustomTextEditorProvider 
         return;
       }
       // Only push to the webview for edits that did NOT originate there
-      // (e.g. external file change, git checkout, find-and-replace).
+      // (external file change, git checkout, find-and-replace, Notion pull).
       if (updatingFromDocument || applyingFromWebview) {
         return;
       }
-      void postDocumentToWebview();
+      postDocumentToWebview();
     });
 
     const messageSub = webview.onDidReceiveMessage(async (msg) => {
       switch (msg?.type) {
         case "ready":
-          await postDocumentToWebview();
+          postDocumentToWebview();
           break;
         case "edit":
           await applyEditFromWebview(msg.text ?? "");
-          // Persist full-fidelity blocks even when the markdown is unchanged
-          // (e.g. nested paragraphs), so nothing is silently lost.
-          if (typeof msg.blocks === "string") {
-            await persistBlocks(msg.text ?? document.getText(), msg.blocks);
-          }
           scheduleAutoSave();
           break;
         case "acked":
@@ -163,8 +125,6 @@ export class RichNotesEditorProvider implements vscode.CustomTextEditorProvider 
           updatingFromDocument = false;
           break;
         case "copyCode":
-          // Copy a code block's raw text via the host — clipboard access from a
-          // webview is unreliable, but vscode.env.clipboard always works.
           if (typeof msg.text === "string") {
             await vscode.env.clipboard.writeText(msg.text);
           }
@@ -177,10 +137,9 @@ export class RichNotesEditorProvider implements vscode.CustomTextEditorProvider 
       if (webviewPanel.active) {
         RichNotesEditorProvider.activeDocument = document;
         // Rising edge: the panel just regained focus (returning from Notion in a
-        // browser tab, or refocusing the editor within VS Code without the OS
-        // window blurring). Pull any remote changes — the cooldown inside
-        // checkRemoteOnOpen dedupes this against the window-focus, tab-activation
-        // and first-open triggers.
+        // browser tab, or refocusing the editor). Pull any remote changes — the
+        // cooldown inside checkRemoteOnOpen dedupes against the window-focus,
+        // tab-activation and first-open triggers.
         if (!wasActive) {
           void checkRemoteOnOpen(this.context, document.uri).catch((err) => {
             if (!isCancellation(err)) {
@@ -230,7 +189,7 @@ export class RichNotesEditorProvider implements vscode.CustomTextEditorProvider 
     const csp = [
       `default-src 'none'`,
       `img-src ${webview.cspSource} https: data: blob:`,
-      // BlockNote/Mantine inject runtime <style> tags, so inline styles are
+      // Milkdown/Crepe inject runtime <style> tags, so inline styles are
       // required; data: covers bundled fonts.
       `style-src ${webview.cspSource} 'unsafe-inline'`,
       `font-src ${webview.cspSource} data:`,
