@@ -1,9 +1,9 @@
 import * as vscode from "vscode";
 import * as path from "path";
 import { RichNotesEditorProvider } from "./richTextEditorProvider";
-import { readSidecar, updateNotionLink } from "./sidecar";
+import { parseNote } from "./frontmatter";
 import { SyncedRegistry } from "./syncedRegistry";
-import { manualSync, forcePull, forcePush, syncStatus } from "./sync";
+import { manualSync, forcePull, forcePush, syncStatus, saveNote } from "./sync";
 import {
   getToken,
   setTokenInteractive,
@@ -57,8 +57,7 @@ async function syncCommand(
     return;
   }
 
-  const markdown = doc.getText();
-  const link = (await readSidecar(doc.uri))?.notion;
+  const { link, body, frontmatter } = parseNote(doc.getText());
 
   await vscode.window.withProgress(
     {
@@ -72,7 +71,7 @@ async function syncCommand(
         const fallbackTitle = path.basename(doc.uri.fsPath, ".md");
         let newLink;
         if (link?.pageId) {
-          newLink = await pushToPage(token, link.pageId, markdown, fallbackTitle);
+          newLink = await pushToPage(token, link.pageId, body, fallbackTitle);
         } else {
           const parent = getParentPageId();
           if (!parent) {
@@ -81,9 +80,9 @@ async function syncCommand(
             );
             return;
           }
-          newLink = await createLinkedPage(token, parent, markdown, fallbackTitle);
+          newLink = await createLinkedPage(token, parent, body, fallbackTitle);
         }
-        await updateNotionLink(doc.uri, markdown, newLink);
+        await saveNote(doc.uri, body, newLink, frontmatter);
         registry.markSynced(doc.uri);
         vscode.window.showInformationMessage(
           link?.pageId
@@ -108,12 +107,13 @@ async function unlinkCommand(
     vscode.window.showWarningMessage("Open a note first.");
     return;
   }
-  const sidecar = await readSidecar(doc.uri);
-  if (!sidecar?.notion?.pageId) {
+  const { link, body, frontmatter } = parseNote(doc.getText());
+  if (!link?.pageId) {
     vscode.window.showInformationMessage("This note isn’t linked to Notion.");
     return;
   }
-  await updateNotionLink(doc.uri, doc.getText(), undefined);
+  // Drop the notion frontmatter, leaving the body (and any other keys) intact.
+  await saveNote(doc.uri, body, undefined, frontmatter);
   registry.markUnsynced(doc.uri);
   vscode.window.showInformationMessage(
     "Unlinked from Notion. The Notion page was left intact; auto-sync is off for this note."

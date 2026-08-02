@@ -268,6 +268,7 @@
     "@tryfabric/martian": "^1.2.4",
     "notion-to-md": "^3.1.9",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "yaml": "^2.9.0"
   }
 }

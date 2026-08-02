@@ -1,16 +1,24 @@
 import * as vscode from "vscode";
 import * as path from "path";
-import { readSidecar, sidecarUriFor } from "./sidecar";
+import { noteLink } from "./frontmatter";
 import { getToken, archivePage } from "./notionSync";
 import { SyncedRegistry } from "./syncedRegistry";
 
 const isNote = (uri: vscode.Uri) => uri.fsPath.endsWith(".md");
 
+async function readLinkPageId(uri: vscode.Uri): Promise<string | undefined> {
+  try {
+    const bytes = await vscode.workspace.fs.readFile(uri);
+    return noteLink(Buffer.from(bytes).toString("utf8"))?.pageId;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
- * On deleting a note: clean up its orphaned sidecar, and — if it was linked to
- * Notion — ask whether to keep or archive the Notion page. The page id is
- * captured in `onWillDeleteFiles` because the sidecar may be gone by the time
- * the deletion completes.
+ * On deleting a note that was linked to Notion, ask whether to keep or archive
+ * the Notion page. The page id is captured in `onWillDeleteFiles` because the
+ * file is gone by the time the deletion completes.
  */
 export function registerNoteLifecycle(
   context: vscode.ExtensionContext,
@@ -26,7 +34,7 @@ export function registerNoteLifecycle(
             if (!isNote(uri)) {
               continue;
             }
-            const pageId = (await readSidecar(uri))?.notion?.pageId;
+            const pageId = await readLinkPageId(uri);
             if (pageId) {
               pendingPageIds.set(uri.fsPath, pageId);
             }
@@ -39,12 +47,6 @@ export function registerNoteLifecycle(
       for (const uri of e.files) {
         if (!isNote(uri)) {
           continue;
-        }
-        // Remove the orphaned sidecar (the watcher will drop it from the registry).
-        try {
-          await vscode.workspace.fs.delete(sidecarUriFor(uri));
-        } catch {
-          /* already gone */
         }
         registry.markUnsynced(uri);
 

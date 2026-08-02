@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { readSidecar } from "./sidecar";
+import { noteLink } from "./frontmatter";
 
 // Context key holding a map of { <note fsPath>: true } for notes linked to
 // Notion. Menu `when` clauses use `resourcePath in richNotes.syncedNotes` to
@@ -11,7 +11,9 @@ export class SyncedRegistry {
 
   async init(context: vscode.ExtensionContext): Promise<void> {
     await this.scan();
-    const watcher = vscode.workspace.createFileSystemWatcher("**/*.md.blocks.json");
+    // The Notion link now lives in each note's frontmatter, so watch the notes
+    // themselves (previously we watched the `.md.blocks.json` sidecars).
+    const watcher = vscode.workspace.createFileSystemWatcher("**/*.md");
     context.subscriptions.push(
       watcher,
       watcher.onDidCreate((u) => this.refresh(u)),
@@ -20,30 +22,28 @@ export class SyncedRegistry {
     );
   }
 
-  /** Note Uri for a "<name>.md.blocks.json" sidecar Uri. */
-  private noteUriFor(sidecarUri: vscode.Uri): vscode.Uri {
-    return sidecarUri.with({
-      path: sidecarUri.path.replace(/\.blocks\.json$/, ""),
-    });
+  private async isLinked(noteUri: vscode.Uri): Promise<boolean> {
+    try {
+      const bytes = await vscode.workspace.fs.readFile(noteUri);
+      return !!noteLink(Buffer.from(bytes).toString("utf8"))?.pageId;
+    } catch {
+      return false;
+    }
   }
 
   private async scan(): Promise<void> {
     this.synced.clear();
-    const sidecars = await vscode.workspace.findFiles("**/*.md.blocks.json");
-    for (const sidecar of sidecars) {
-      const noteUri = this.noteUriFor(sidecar);
-      const sc = await readSidecar(noteUri);
-      if (sc?.notion?.pageId) {
+    const notes = await vscode.workspace.findFiles("**/*.md", "**/node_modules/**");
+    for (const noteUri of notes) {
+      if (await this.isLinked(noteUri)) {
         this.synced.add(noteUri.fsPath);
       }
     }
     this.push();
   }
 
-  private async refresh(sidecarUri: vscode.Uri): Promise<void> {
-    const noteUri = this.noteUriFor(sidecarUri);
-    const sc = await readSidecar(noteUri);
-    if (sc?.notion?.pageId) {
+  private async refresh(noteUri: vscode.Uri): Promise<void> {
+    if (await this.isLinked(noteUri)) {
       this.synced.add(noteUri.fsPath);
     } else {
       this.synced.delete(noteUri.fsPath);
@@ -51,8 +51,8 @@ export class SyncedRegistry {
     this.push();
   }
 
-  private remove(sidecarUri: vscode.Uri): void {
-    this.synced.delete(this.noteUriFor(sidecarUri).fsPath);
+  private remove(noteUri: vscode.Uri): void {
+    this.synced.delete(noteUri.fsPath);
     this.push();
   }
 

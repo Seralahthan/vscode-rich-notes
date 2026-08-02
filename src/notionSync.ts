@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import { Client } from "@notionhq/client";
 import { markdownToBlocks } from "@tryfabric/martian";
 import { NotionToMarkdown } from "notion-to-md";
-import { NotionLink, hashOf } from "./sidecar";
+import { NotionLink, linkFrom } from "./frontmatter";
 import { splitSoftBreaks } from "./markdown";
 
 const SECRET_KEY = "richNotes.notionToken";
@@ -177,13 +177,9 @@ export async function createLinkedPage(
   if (blocks.length > 100) {
     await appendInBatches(client, page.id, blocks.slice(100));
   }
-  return {
-    pageId: page.id,
-    lastSyncedHash: hashOf(markdown),
-    lastSyncedMarkdown: markdown,
-    lastEditedTime: await editedTime(client, page.id),
-    lastSyncedAt: new Date().toISOString(),
-  };
+  // `markdown` here is the note body (frontmatter already stripped); the link's
+  // syncedHash is the canonical body hash.
+  return linkFrom(page.id, markdown, await editedTime(client, page.id));
 }
 
 /** Overwrite an existing Notion page's title and content from the markdown. */
@@ -199,13 +195,7 @@ export async function pushToPage(
   const blocks = toNotionBlocks(body);
   await clearChildren(client, pageId);
   await appendInBatches(client, pageId, blocks);
-  return {
-    pageId,
-    lastSyncedHash: hashOf(markdown),
-    lastSyncedMarkdown: markdown,
-    lastEditedTime: await editedTime(client, pageId),
-    lastSyncedAt: new Date().toISOString(),
-  };
+  return linkFrom(pageId, markdown, await editedTime(client, pageId));
 }
 
 /**

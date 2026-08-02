@@ -1,6 +1,12 @@
 import * as vscode from "vscode";
 import * as path from "path";
-import { readSidecar, updateNotionLink, hashOf, NotionLink } from "./sidecar";
+import {
+  parseNote,
+  serializeNote,
+  NotionLink,
+  linkFrom,
+  bodyHash,
+} from "./frontmatter";
 import { getToken, pushToPage, pullFromPage } from "./notionSync";
 import { canonicalizeMarkdown } from "./markdown";
 
@@ -19,12 +25,15 @@ export function isCancellation(err: unknown): boolean {
 }
 
 // State for an in-progress diff-based conflict resolution (one at a time).
+// Bodies are frontmatter-stripped; `frontmatter` is carried so it can be
+// reattached when the resolution writes the note back.
 interface PendingConflict {
   noteUri: vscode.Uri;
   token: string;
   link: NotionLink;
-  localMarkdown: string;
-  remoteMarkdown: string;
+  frontmatter: Record<string, unknown>;
+  localBody: string;
+  remoteBody: string;
   lastEditedTime?: string;
   leftUri: vscode.Uri; // canonical remote (temp)
   rightUri: vscode.Uri; // canonical local (temp, editable for merge)
@@ -63,7 +72,21 @@ function unlock(key: string): void {
   syncing.delete(key);
 }
 
-/** Replace a note's content, updating the open editor if there is one, and save. */
+// ---- Note I/O (link lives in the .md's frontmatter) -----------------------
+
+interface LoadedNote {
+  link?: NotionLink;
+  body: string;
+  frontmatter: Record<string, unknown>;
+}
+
+/** Read a note's link + body + other frontmatter from disk. */
+async function loadNote(uri: vscode.Uri): Promise<LoadedNote> {
+  const doc = await vscode.workspace.openTextDocument(uri);
+  return parseNote(doc.getText());
+}
+
+/** Replace a note's content (frontmatter + body), updating any open editor, and save. */
 async function setNoteContent(uri: vscode.Uri, text: string): Promise<void> {
   const doc = await vscode.workspace.openTextDocument(uri);
   const edit = new vscode.WorkspaceEdit();
@@ -76,15 +99,17 @@ async function setNoteContent(uri: vscode.Uri, text: string): Promise<void> {
   await doc.save();
 }
 
-function linkFrom(pageId: string, markdown: string, lastEditedTime?: string): NotionLink {
-  return {
-    pageId,
-    lastSyncedHash: hashOf(markdown),
-    lastSyncedMarkdown: markdown,
-    lastEditedTime,
-    lastSyncedAt: new Date().toISOString(),
-  };
+/** Write body + link (as frontmatter) back to the note, preserving other keys. */
+export async function saveNote(
+  uri: vscode.Uri,
+  body: string,
+  link: NotionLink | undefined,
+  frontmatter: Record<string, unknown>
+): Promise<void> {
+  await setNoteContent(uri, serializeNote(body, link, frontmatter));
 }
+
+const noteTitle = (uri: vscode.Uri) => path.basename(uri.fsPath, ".md");
 
 /**
  * Bidirectional sync for a note already linked to Notion. Detects which side(s)
@@ -93,8 +118,6 @@ function linkFrom(pageId: string, markdown: string, lastEditedTime?: string): No
 export async function syncLinkedNote(
   context: vscode.ExtensionContext,
   noteUri: vscode.Uri,
-  link: NotionLink,
-  markdown: string,
   trigger: SyncTrigger
 ): Promise<void> {
   const key = noteUri.toString();
@@ -102,7 +125,7 @@ export async function syncLinkedNote(
     return; // a sync is already running for this note — don't read a mid-push state
   }
   try {
-    await runSync(context, noteUri, link, markdown, trigger);
+    await runSync(context, noteUri, trigger);
   } finally {
     unlock(key);
   }
@@ -111,8 +134,6 @@ export async function syncLinkedNote(
 async function runSync(
   context: vscode.ExtensionContext,
   noteUri: vscode.Uri,
-  link: NotionLink,
-  markdown: string,
   trigger: SyncTrigger
 ): Promise<void> {
   const token = await getToken(context);
@@ -123,20 +144,24 @@ async function runSync(
     return;
   }
 
+  const { link, body, frontmatter } = await loadNote(noteUri);
+  if (!link?.pageId) {
+    return; // not linked
+  }
+
   // Change detection is CONTENT-based, not timestamp-based: Notion's
-  // last_edited_time is truncated to the minute, so an edit within the same
-  // minute as the last sync would be invisible. We compare canonical content of
-  // local and remote against the stored base (lastSyncedMarkdown).
+  // last_edited_time is truncated to the minute. We compare a hash of each
+  // side's canonical body against the stored `syncedHash` (the canonical body
+  // hash at the last sync).
   const { markdown: remote, lastEditedTime } = await pullFromPage(
     token,
     link.pageId,
-    markdown
+    body
   );
-  const cLocal = canonicalizeMarkdown(markdown);
+  const cLocal = canonicalizeMarkdown(body);
   const cRemote = canonicalizeMarkdown(remote);
-  const cBase = canonicalizeMarkdown(link.lastSyncedMarkdown ?? "");
-  const localChanged = cLocal !== cBase;
-  const remoteChanged = cRemote !== cBase;
+  const localChanged = bodyHash(body) !== link.syncedHash;
+  const remoteChanged = bodyHash(remote) !== link.syncedHash;
 
   if (!localChanged && !remoteChanged) {
     if (trigger === "manual") {
@@ -146,13 +171,8 @@ async function runSync(
   }
 
   if (localChanged && !remoteChanged) {
-    const newLink = await pushToPage(
-      token,
-      link.pageId,
-      markdown,
-      path.basename(noteUri.fsPath, ".md")
-    );
-    await updateNotionLink(noteUri, markdown, newLink);
+    const newLink = await pushToPage(token, link.pageId, body, noteTitle(noteUri));
+    await saveNote(noteUri, body, newLink, frontmatter);
     if (trigger === "manual") {
       vscode.window.showInformationMessage("Pushed to Notion.");
     }
@@ -160,8 +180,7 @@ async function runSync(
   }
 
   if (!localChanged && remoteChanged) {
-    await setNoteContent(noteUri, remote);
-    await updateNotionLink(noteUri, remote, linkFrom(link.pageId, remote, lastEditedTime));
+    await saveNote(noteUri, remote, linkFrom(link.pageId, remote, lastEditedTime), frontmatter);
     if (trigger === "manual") {
       vscode.window.showInformationMessage("Pulled the latest from Notion.");
     }
@@ -170,11 +189,7 @@ async function runSync(
 
   // Both sides changed. If they already match, just reconcile — no prompt.
   if (cLocal === cRemote) {
-    await updateNotionLink(
-      noteUri,
-      markdown,
-      linkFrom(link.pageId, markdown, lastEditedTime)
-    );
+    await saveNote(noteUri, body, linkFrom(link.pageId, body, lastEditedTime), frontmatter);
     if (trigger === "manual") {
       vscode.window.showInformationMessage("Local and Notion already match — reconciled.");
     }
@@ -192,7 +207,7 @@ async function runSync(
       return;
     }
   }
-  await openConflict(context, token, noteUri, link, markdown, remote, lastEditedTime);
+  await openConflict(context, token, noteUri, link, frontmatter, body, remote, lastEditedTime);
 }
 
 /**
@@ -205,8 +220,9 @@ async function openConflict(
   token: string,
   noteUri: vscode.Uri,
   link: NotionLink,
-  localMarkdown: string,
-  remoteMarkdown: string,
+  frontmatter: Record<string, unknown>,
+  localBody: string,
+  remoteBody: string,
   lastEditedTime: string | undefined
 ): Promise<void> {
   if (pending) {
@@ -216,22 +232,23 @@ async function openConflict(
   const name = path.basename(noteUri.fsPath);
   const leftUri = vscode.Uri.joinPath(context.globalStorageUri, "notion-remote~" + name);
   const rightUri = vscode.Uri.joinPath(context.globalStorageUri, "your-local~" + name);
-  // Canonicalize both sides so only genuine content differences show.
+  // Canonicalize both bodies so only genuine content differences show.
   await vscode.workspace.fs.writeFile(
     leftUri,
-    Buffer.from(canonicalizeMarkdown(remoteMarkdown), "utf8")
+    Buffer.from(canonicalizeMarkdown(remoteBody), "utf8")
   );
   await vscode.workspace.fs.writeFile(
     rightUri,
-    Buffer.from(canonicalizeMarkdown(localMarkdown), "utf8")
+    Buffer.from(canonicalizeMarkdown(localBody), "utf8")
   );
 
   pending = {
     noteUri,
     token,
     link,
-    localMarkdown,
-    remoteMarkdown,
+    frontmatter,
+    localBody,
+    remoteBody,
     lastEditedTime,
     leftUri,
     rightUri,
@@ -271,34 +288,23 @@ async function finishResolve(mode: ResolveMode): Promise<void> {
         "A sync is in progress — please resolve again in a moment."
       );
     } else if (mode === "remote") {
-      await setNoteContent(p.noteUri, p.remoteMarkdown);
-      await updateNotionLink(
+      await saveNote(
         p.noteUri,
-        p.remoteMarkdown,
-        linkFrom(p.link.pageId, p.remoteMarkdown, p.lastEditedTime)
+        p.remoteBody,
+        linkFrom(p.link.pageId, p.remoteBody, p.lastEditedTime),
+        p.frontmatter
       );
       vscode.window.showInformationMessage("Replaced the local note with the Notion version.");
     } else if (mode === "local") {
-      const newLink = await pushToPage(
-        p.token,
-        p.link.pageId,
-        p.localMarkdown,
-        path.basename(p.noteUri.fsPath, ".md")
-      );
-      await updateNotionLink(p.noteUri, p.localMarkdown, newLink);
+      const newLink = await pushToPage(p.token, p.link.pageId, p.localBody, noteTitle(p.noteUri));
+      await saveNote(p.noteUri, p.localBody, newLink, p.frontmatter);
       vscode.window.showInformationMessage("Pushed your local version to Notion.");
     } else if (mode === "merge") {
       // The user edited the (right) local side in the diff; use that.
       const bytes = await vscode.workspace.fs.readFile(p.rightUri);
       const merged = Buffer.from(bytes).toString("utf8");
-      await setNoteContent(p.noteUri, merged);
-      const newLink = await pushToPage(
-        p.token,
-        p.link.pageId,
-        merged,
-        path.basename(p.noteUri.fsPath, ".md")
-      );
-      await updateNotionLink(p.noteUri, merged, newLink);
+      const newLink = await pushToPage(p.token, p.link.pageId, merged, noteTitle(p.noteUri));
+      await saveNote(p.noteUri, merged, newLink, p.frontmatter);
       vscode.window.showInformationMessage("Merged and pushed to Notion.");
     }
   } catch (err: any) {
@@ -349,12 +355,11 @@ export async function checkRemoteOnOpen(
   }
   recentChecks.set(key, now);
 
-  const link = (await readSidecar(noteUri))?.notion;
+  const { link } = await loadNote(noteUri);
   if (!link?.pageId) {
     return;
   }
-  const doc = await vscode.workspace.openTextDocument(noteUri);
-  await syncLinkedNote(context, noteUri, link, doc.getText(), "auto");
+  await syncLinkedNote(context, noteUri, "auto");
 }
 
 /** Diagnostic: report what the sync engine sees for a note. */
@@ -362,7 +367,7 @@ export async function syncStatus(
   context: vscode.ExtensionContext,
   noteUri: vscode.Uri
 ): Promise<void> {
-  const link = (await readSidecar(noteUri))?.notion;
+  const { link, body } = await loadNote(noteUri);
   if (!link?.pageId) {
     vscode.window.showInformationMessage("This note isn’t linked to Notion.");
     return;
@@ -372,23 +377,16 @@ export async function syncStatus(
     vscode.window.showWarningMessage("Set your Notion token first.");
     return;
   }
-  const doc = await vscode.workspace.openTextDocument(noteUri);
-  const { markdown: remote, lastEditedTime } = await pullFromPage(
-    token,
-    link.pageId,
-    doc.getText()
-  );
+  const { markdown: remote, lastEditedTime } = await pullFromPage(token, link.pageId, body);
 
-  // Content-based (matches the sync engine): compare canonical local/remote to base.
-  const cLocal = canonicalizeMarkdown(doc.getText());
+  const cLocal = canonicalizeMarkdown(body);
   const cRemote = canonicalizeMarkdown(remote);
-  const cBase = canonicalizeMarkdown(link.lastSyncedMarkdown ?? "");
 
   vscode.window.showInformationMessage(
     [
       `Page id: ${link.pageId}`,
-      `Local changed since sync: ${cLocal !== cBase}`,
-      `Remote changed since sync: ${cRemote !== cBase}`,
+      `Local changed since sync: ${bodyHash(body) !== link.syncedHash}`,
+      `Remote changed since sync: ${bodyHash(remote) !== link.syncedHash}`,
       `Local == Remote: ${cLocal === cRemote}`,
       `Notion last-edited now: ${lastEditedTime ?? "unknown"} (minute-truncated)`,
       `Last synced at: ${link.lastSyncedAt ?? "none"}`,
@@ -402,7 +400,7 @@ export async function forcePull(
   context: vscode.ExtensionContext,
   noteUri: vscode.Uri
 ): Promise<void> {
-  const link = (await readSidecar(noteUri))?.notion;
+  const { link, frontmatter, body } = await loadNote(noteUri);
   if (!link?.pageId) {
     vscode.window.showInformationMessage("This note isn’t linked to Notion.");
     return;
@@ -418,10 +416,8 @@ export async function forcePull(
     return;
   }
   try {
-    const local = (await vscode.workspace.openTextDocument(noteUri)).getText();
-    const { markdown, lastEditedTime } = await pullFromPage(token, link.pageId, local);
-    await setNoteContent(noteUri, markdown);
-    await updateNotionLink(noteUri, markdown, linkFrom(link.pageId, markdown, lastEditedTime));
+    const { markdown, lastEditedTime } = await pullFromPage(token, link.pageId, body);
+    await saveNote(noteUri, markdown, linkFrom(link.pageId, markdown, lastEditedTime), frontmatter);
     vscode.window.showInformationMessage("Pulled from Notion — local note replaced.");
   } finally {
     unlock(key);
@@ -433,7 +429,7 @@ export async function forcePush(
   context: vscode.ExtensionContext,
   noteUri: vscode.Uri
 ): Promise<void> {
-  const link = (await readSidecar(noteUri))?.notion;
+  const { link, frontmatter, body } = await loadNote(noteUri);
   if (!link?.pageId) {
     vscode.window.showInformationMessage("This note isn’t linked to Notion.");
     return;
@@ -449,14 +445,8 @@ export async function forcePush(
     return;
   }
   try {
-    const md = (await vscode.workspace.openTextDocument(noteUri)).getText();
-    const newLink = await pushToPage(
-      token,
-      link.pageId,
-      md,
-      path.basename(noteUri.fsPath, ".md")
-    );
-    await updateNotionLink(noteUri, md, newLink);
+    const newLink = await pushToPage(token, link.pageId, body, noteTitle(noteUri));
+    await saveNote(noteUri, body, newLink, frontmatter);
     vscode.window.showInformationMessage("Pushed to Notion — remote page replaced.");
   } finally {
     unlock(key);
@@ -468,13 +458,12 @@ export async function manualSync(
   context: vscode.ExtensionContext,
   noteUri: vscode.Uri
 ): Promise<void> {
-  const link = (await readSidecar(noteUri))?.notion;
+  const { link } = await loadNote(noteUri);
   if (!link?.pageId) {
     vscode.window.showInformationMessage(
       "This note isn’t linked to Notion yet — use “Rich Notes: Sync to Notion”."
     );
     return;
   }
-  const doc = await vscode.workspace.openTextDocument(noteUri);
-  await syncLinkedNote(context, noteUri, link, doc.getText(), "manual");
+  await syncLinkedNote(context, noteUri, "manual");
 }

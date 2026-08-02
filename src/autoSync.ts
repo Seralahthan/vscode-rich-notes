@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { readSidecar, hashOf } from "./sidecar";
+import { parseNote, bodyHash } from "./frontmatter";
 import { syncLinkedNote } from "./sync";
 
 // How long after a save to wait before pushing (coalesces rapid saves and
@@ -42,20 +42,19 @@ export function registerAutoSync(context: vscode.ExtensionContext): void {
     }
 
     const doc = await vscode.workspace.openTextDocument(uri);
-    const markdown = doc.getText();
-    const link = (await readSidecar(uri))?.notion;
+    const { link, body } = parseNote(doc.getText());
     if (!link?.pageId) {
       return; // not linked to Notion
     }
-    if (link.lastSyncedHash === hashOf(markdown)) {
-      return; // nothing changed locally since last sync
+    if (link.syncedHash === bodyHash(body)) {
+      return; // nothing changed locally since last sync (frontmatter-only save)
     }
 
     inFlight.add(key);
     try {
       // Delegates to the sync engine: pushes when only local changed, and
       // surfaces a diff-based resolver when both sides changed.
-      await syncLinkedNote(context, uri, link, markdown, "auto");
+      await syncLinkedNote(context, uri, "auto");
     } catch (err: any) {
       vscode.window.showErrorMessage(
         "Rich Notes: Notion auto-sync failed — " + (err?.message ?? String(err))
