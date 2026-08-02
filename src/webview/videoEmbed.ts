@@ -2,30 +2,67 @@
  * A "video embed" block for Milkdown/Crepe.
  *
  * Round-trip design: in plain markdown a video is just a link — Notion exports
- * `[url](url)` for a video block, and re-embeds it on import by recognizing the
+ * `[url](url)` for a video block and re-embeds it on import by recognizing the
  * URL. We do the same: the block serializes to `[url](url)` (clean, portable,
  * Notion-compatible), and on load a `$remark` transform recognizes a lone
- * video-host link and turns it back into a video block. Rendering is a link
- * CARD (no iframe, so nothing external loads into the webview).
+ * video-host link and turns it back into a video block.
  *
- * UX (matches the requested design): inserting shows a placeholder with a video
- * icon; clicking it reveals a "Paste the video link…" input + Embed button
- * (Link only, no upload); once set it becomes a card that opens the URL
- * externally on click.
+ * Rendering: inline iframe playback is IMPOSSIBLE in a VS Code webview — it runs
+ * in a sandboxed iframe with an opaque `vscode-webview://` origin that YouTube's
+ * player rejects ("Error 153"); microsoft/vscode#196975 is closed as not
+ * planned. So we render:
+ *   - YouTube  -> a real thumbnail (images are allowed) + play overlay; clicking
+ *                 opens the video externally.
+ *   - direct media file (.mp4/.webm/.mov) -> a native <video> player.
+ *   - anything else -> a click-to-open card.
+ *
+ * UX: inserting shows a placeholder with a video icon; clicking it reveals a
+ * "Paste the video link…" input + Embed button (Link only, no upload).
  */
-import { $nodeSchema, $remark } from "@milkdown/kit/utils";
+import { $nodeSchema, $remark, $view } from "@milkdown/kit/utils";
 import { commandsCtx, editorViewCtx } from "@milkdown/kit/core";
 import { clearTextInCurrentBlockCommand } from "@milkdown/kit/preset/commonmark";
 import type { Ctx } from "@milkdown/kit/ctx";
-import { $view } from "@milkdown/kit/utils";
 
 const NODE = "video_embed";
 
 /** Recognize common video hosts / files (used for insert + reload detection). */
 export function isVideoUrl(url: string): boolean {
-  return /(?:youtube\.com|youtu\.be|vimeo\.com|dailymotion\.com|loom\.com|\.(?:mp4|webm|mov|m4v))/i.test(
+  return /(?:youtube\.com|youtu\.be|vimeo\.com|dailymotion\.com|dai\.ly|loom\.com|\.(?:mp4|webm|mov|m4v))/i.test(
     url
   );
+}
+
+/** The YouTube video id for a watch/share/embed/shorts URL, or null. */
+function youtubeId(url: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return null;
+  }
+  const host = u.hostname.replace(/^www\./, "").replace(/^m\./, "");
+  if (host === "youtu.be") {
+    return u.pathname.slice(1) || null;
+  }
+  if (host === "youtube.com" || host === "youtube-nocookie.com") {
+    const v = u.searchParams.get("v");
+    if (v) {
+      return v;
+    }
+    const m = u.pathname.match(/^\/(?:embed|shorts)\/([\w-]+)/);
+    return m ? m[1] : null;
+  }
+  return null;
+}
+
+/** A direct-media file a native `<video>` element can play, or null. */
+function directMedia(url: string): string | null {
+  try {
+    return /\.(mp4|webm|mov|m4v)$/i.test(new URL(url).pathname) ? url : null;
+  } catch {
+    return null;
+  }
 }
 
 // --- Schema: block atom with a `src` attr, serialized as a markdown link ------
@@ -90,7 +127,7 @@ export const videoEmbedRemark = $remark(
   }
 );
 
-// --- Node view: placeholder -> link input -> card -----------------------------
+// --- Node view: placeholder -> link input -> thumbnail / <video> / card --------
 
 const ICON_PLAY =
   '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
@@ -110,28 +147,44 @@ export function videoEmbedView(openExternal: (url: string) => void) {
         view.dispatch(view.state.tr.setNodeMarkup(pos, undefined, { src }));
       };
 
-      const render = (currentSrc: string) => {
-        dom.innerHTML = "";
-        if (currentSrc) {
-          // Card
-          const card = document.createElement("button");
-          card.type = "button";
-          card.className = "rn-video-card";
-          card.innerHTML = `<span class="rn-video-icon">${ICON_PLAY}</span><span class="rn-video-url"></span>`;
-          card.querySelector(".rn-video-url")!.textContent = currentSrc;
-          card.addEventListener("mousedown", (e) => e.preventDefault());
-          card.addEventListener("click", () => openExternal(currentSrc));
-          dom.appendChild(card);
-          return;
-        }
-        // Placeholder -> expands to a link input.
-        const placeholder = document.createElement("button");
-        placeholder.type = "button";
-        placeholder.className = "rn-video-placeholder";
-        placeholder.innerHTML = `<span class="rn-video-icon">${ICON_PLAY}</span><span>Embed a video</span>`;
-        placeholder.addEventListener("mousedown", (e) => e.preventDefault());
-        placeholder.addEventListener("click", () => showInput());
-        dom.appendChild(placeholder);
+      const renderThumb = (id: string, url: string) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "rn-video-thumb";
+        const img = document.createElement("img");
+        img.src = `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+        img.alt = "Video thumbnail";
+        const play = document.createElement("span");
+        play.className = "rn-video-play";
+        play.innerHTML = ICON_PLAY;
+        const badge = document.createElement("span");
+        badge.className = "rn-video-badge";
+        badge.textContent = "Watch on YouTube";
+        btn.append(img, play, badge);
+        btn.addEventListener("mousedown", (e) => e.preventDefault());
+        btn.addEventListener("click", () => openExternal(url));
+        dom.appendChild(btn);
+      };
+
+      const renderVideo = (src: string) => {
+        const frame = document.createElement("div");
+        frame.className = "rn-video-frame";
+        const video = document.createElement("video");
+        video.src = src;
+        video.controls = true;
+        frame.appendChild(video);
+        dom.appendChild(frame);
+      };
+
+      const renderCard = (url: string) => {
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = "rn-video-card";
+        card.innerHTML = `<span class="rn-video-icon">${ICON_PLAY}</span><span class="rn-video-url"></span>`;
+        card.querySelector(".rn-video-url")!.textContent = url;
+        card.addEventListener("mousedown", (e) => e.preventDefault());
+        card.addEventListener("click", () => openExternal(url));
+        dom.appendChild(card);
       };
 
       const showInput = () => {
@@ -147,7 +200,7 @@ export function videoEmbedView(openExternal: (url: string) => void) {
         btn.textContent = "Embed video";
         const hint = document.createElement("div");
         hint.className = "rn-video-hint";
-        hint.textContent = "Works with YouTube, Vimeo, and more";
+        hint.textContent = "Works with YouTube, Vimeo, and direct video files";
         const commit = () => {
           const url = input.value.trim();
           if (url) {
@@ -162,11 +215,33 @@ export function videoEmbedView(openExternal: (url: string) => void) {
             commit();
           }
         });
-        panel.appendChild(input);
-        panel.appendChild(btn);
-        panel.appendChild(hint);
+        panel.append(input, btn, hint);
         dom.appendChild(panel);
         setTimeout(() => input.focus(), 0);
+      };
+
+      const render = (currentSrc: string) => {
+        dom.innerHTML = "";
+        if (currentSrc) {
+          const yt = youtubeId(currentSrc);
+          const media = directMedia(currentSrc);
+          if (yt) {
+            renderThumb(yt, currentSrc);
+          } else if (media) {
+            renderVideo(media);
+          } else {
+            renderCard(currentSrc);
+          }
+          return;
+        }
+        // Placeholder -> expands to the link input.
+        const placeholder = document.createElement("button");
+        placeholder.type = "button";
+        placeholder.className = "rn-video-placeholder";
+        placeholder.innerHTML = `<span class="rn-video-icon">${ICON_PLAY}</span><span>Embed a video</span>`;
+        placeholder.addEventListener("mousedown", (e) => e.preventDefault());
+        placeholder.addEventListener("click", () => showInput());
+        dom.appendChild(placeholder);
       };
 
       render(node.attrs.src || "");

@@ -197,12 +197,15 @@ export class RichNotesEditorProvider implements vscode.CustomTextEditorProvider 
 
     const csp = [
       `default-src 'none'`,
+      // img-src covers video thumbnails (e.g. YouTube); media-src covers the
+      // native <video> player for direct .mp4/.webm files.
       `img-src ${webview.cspSource} https: data: blob:`,
       // Milkdown/Crepe inject runtime <style> tags, so inline styles are
       // required; data: covers bundled fonts.
       `style-src ${webview.cspSource} 'unsafe-inline'`,
       `font-src ${webview.cspSource} data:`,
       `script-src 'nonce-${nonce}'`,
+      `media-src ${webview.cspSource} https: blob: data:`,
     ].join("; ");
 
     return /* html */ `<!DOCTYPE html>
