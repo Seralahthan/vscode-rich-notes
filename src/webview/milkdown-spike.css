@@ -1,0 +1,99 @@
+/* Spike layout + Crepe theme mapped onto VS Code's theme variables. */
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
+  font-family: var(--vscode-font-family);
+}
+
+.spike-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-editorWidget-border));
+}
+.spike-bar button {
+  padding: 3px 10px;
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.spike-status.ok {
+  color: var(--vscode-testing-iconPassed, #3fb950);
+  font-weight: 600;
+}
+.spike-status.bad {
+  color: var(--vscode-testing-iconFailed, #f85149);
+  font-weight: 600;
+}
+
+.spike-body {
+  display: flex;
+  height: calc(100% - 41px);
+}
+.spike-editor {
+  flex: 1 1 60%;
+  overflow: auto;
+  border-right: 1px solid var(--vscode-widget-border, var(--vscode-editorWidget-border));
+}
+.spike-out {
+  flex: 1 1 40%;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.spike-out-title {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  border-bottom: 1px solid var(--vscode-widget-border, var(--vscode-editorWidget-border));
+}
+.spike-out pre {
+  flex: 1;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 12px;
+}
+
+/*
+ * Map Crepe's `--crepe-color-*` theme tokens onto VS Code's theme variables,
+ * so the editor tracks the active light/dark theme automatically. This block
+ * is imported AFTER Crepe's frame theme, so it overrides the frame defaults.
+ */
+.milkdown {
+  --crepe-color-background: var(--vscode-editor-background);
+  --crepe-color-on-background: var(--vscode-editor-foreground);
+  --crepe-color-surface: var(--vscode-editor-background);
+  --crepe-color-surface-low: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  --crepe-color-on-surface: var(--vscode-editor-foreground);
+  --crepe-color-on-surface-variant: var(--vscode-descriptionForeground);
+  --crepe-color-outline: var(--vscode-widget-border, var(--vscode-editorWidget-border));
+  --crepe-color-primary: var(--vscode-focusBorder);
+  --crepe-color-secondary: var(--vscode-editorWidget-background);
+  --crepe-color-on-secondary: var(--vscode-editor-foreground);
+  --crepe-color-inverse: var(--vscode-editorHoverWidget-background);
+  --crepe-color-on-inverse: var(--vscode-editorHoverWidget-foreground);
+  --crepe-color-inline-code: var(--vscode-textPreformat-foreground);
+  --crepe-color-error: var(--vscode-errorForeground);
+  --crepe-color-hover: var(--vscode-list-hoverBackground);
+  --crepe-color-selected: var(--vscode-list-activeSelectionBackground);
+  --crepe-color-inline-area: var(--vscode-editor-selectionBackground);
+  --crepe-font-title: var(--vscode-font-family);
+  --crepe-font-default: var(--vscode-font-family);
+  --crepe-font-code: var(--vscode-editor-font-family, monospace);
+}
+.milkdown {
+  padding: 16px 24px;
+}

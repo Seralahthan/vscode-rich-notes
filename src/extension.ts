@@ -5,10 +5,14 @@ import { registerAutoSync } from "./autoSync";
 import { SyncedRegistry } from "./syncedRegistry";
 import { registerNoteLifecycle } from "./noteLifecycle";
 import { registerConflictCommands, checkRemoteOnOpen, isCancellation } from "./sync";
+import { registerMilkdownSpike } from "./milkdownSpike";
 
 export function activate(context: vscode.ExtensionContext) {
   // Register the rich-text custom editor for markdown files.
   context.subscriptions.push(RichNotesEditorProvider.register(context));
+
+  // Dev-only: Phase 0 Milkdown migration spike (feat/milkdown branch).
+  registerMilkdownSpike(context);
 
   // Tracks which notes are linked to Notion (drives the per-file menu).
   const registry = new SyncedRegistry();

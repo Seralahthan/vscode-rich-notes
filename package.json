@@ -122,6 +122,10 @@
       {
         "command": "richNotes.clearNotionToken",
         "title": "Rich Notes: Clear Notion token"
+      },
+      {
+        "command": "richNotes.openMilkdownSpike",
+        "title": "Rich Notes: Open Milkdown spike (dev)"
       }
     ],
     "configuration": {
@@ -239,7 +243,8 @@
   "scripts": {
     "esbuild:ext": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
     "esbuild:web": "esbuild src/webview/index.tsx --bundle --outfile=media/webview.js --format=iife --jsx=automatic --conditions=style --loader:.woff=dataurl --loader:.woff2=dataurl --loader:.ttf=dataurl --define:process.env.NODE_ENV=\\\"production\\\"",
-    "compile": "npm run esbuild:ext -- --sourcemap && npm run esbuild:web -- --sourcemap",
+    "esbuild:spike": "esbuild src/webview/milkdown-spike.ts --bundle --outfile=media/spike.js --format=iife --loader:.woff=dataurl --loader:.woff2=dataurl --loader:.ttf=dataurl --loader:.svg=dataurl --define:process.env.NODE_ENV=\\\"production\\\"",
+    "compile": "npm run esbuild:ext -- --sourcemap && npm run esbuild:web -- --sourcemap && npm run esbuild:spike -- --sourcemap",
     "watch": "npm run esbuild:ext -- --sourcemap --watch & npm run esbuild:web -- --sourcemap --watch",
     "vscode:prepublish": "npm run esbuild:ext -- --minify && npm run esbuild:web -- --minify"
   },
@@ -258,6 +263,7 @@
     "@blocknote/core": "^0.47.0",
     "@blocknote/mantine": "^0.47.0",
     "@blocknote/react": "^0.47.0",
+    "@milkdown/crepe": "^7.21.3",
     "@notionhq/client": "^5.22.0",
     "@tryfabric/martian": "^1.2.4",
     "notion-to-md": "^3.1.9",

@@ -4,6 +4,10 @@ media/webview.js
 media/webview.js.map
 media/webview.css
 media/webview.css.map
+media/spike.js
+media/spike.js.map
+media/spike.css
+media/spike.css.map
 *.vsix
 
 # Full-fidelity sidecars generated next to notes during testing
