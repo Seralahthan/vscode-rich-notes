@@ -32,7 +32,12 @@ body,
   --crepe-color-surface-low: var(--vscode-editorWidget-background, var(--vscode-editor-background));
   --crepe-color-on-surface: var(--vscode-editor-foreground);
   --crepe-color-on-surface-variant: var(--vscode-descriptionForeground);
-  --crepe-color-outline: var(--vscode-widget-border, var(--vscode-editorWidget-border));
+  /*
+   * `outline` powers list bullets, checkbox borders, and all menu/handle icons.
+   * VS Code's widget-border is near-invisible on dark themes, so use the (still
+   * muted but clearly visible) description foreground instead.
+   */
+  --crepe-color-outline: var(--vscode-descriptionForeground, var(--vscode-foreground));
   --crepe-color-primary: var(--vscode-focusBorder);
   --crepe-color-secondary: var(--vscode-editorWidget-background);
   --crepe-color-on-secondary: var(--vscode-editor-foreground);
@@ -60,4 +65,44 @@ body,
 }
 .milkdown .editor h3 {
   font-size: 1.25em;
+}
+
+/* Make list bullets, numbers, and checkboxes clearly visible on dark themes. */
+.milkdown .milkdown-list-item-block li .label-wrapper,
+.milkdown .milkdown-list-item-block li .label-wrapper .label,
+.milkdown .milkdown-list-item-block li .label-wrapper svg {
+  color: var(--vscode-editor-foreground);
+  fill: var(--vscode-editor-foreground);
+  opacity: 0.85;
+}
+
+/* Strike through and mute the text of a completed checklist item (Notion-style). */
+.milkdown .list-item:has(.label-wrapper .checked) > .children {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+/*
+ * Give the slash menu and selection toolbar a distinct, elevated surface with a
+ * border (Notion/BlockNote-style) instead of blending into the editor, and make
+ * the tab bar + selected item read clearly.
+ */
+.milkdown .milkdown-slash-menu,
+.milkdown .milkdown-toolbar,
+.milkdown .milkdown-block-handle {
+  background: var(--vscode-editorWidget-background, var(--vscode-menu-background)) !important;
+  border: 1px solid var(--vscode-widget-border, var(--vscode-editorWidget-border));
+}
+.milkdown .milkdown-slash-menu .tab-group ul li.selected {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+.milkdown .milkdown-slash-menu .menu-groups .menu-group li.hover,
+.milkdown .milkdown-slash-menu .menu-groups .menu-group li.active {
+  background: var(--vscode-list-hoverBackground);
+}
+/* The slash-menu item icons (H1, list, code, …) — visible, not washed out. */
+.milkdown .milkdown-slash-menu .menu-groups .menu-group li svg {
+  color: var(--vscode-icon-foreground, var(--vscode-editor-foreground));
+  fill: var(--vscode-icon-foreground, var(--vscode-editor-foreground));
 }
