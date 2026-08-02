@@ -26,6 +26,11 @@ body,
   border-radius: 4px;
   cursor: pointer;
 }
+.spike-label {
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  margin-left: 6px;
+}
 .spike-status.ok {
   color: var(--vscode-testing-iconPassed, #3fb950);
   font-weight: 600;

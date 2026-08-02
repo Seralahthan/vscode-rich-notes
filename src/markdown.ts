@@ -64,11 +64,43 @@ export function normalizeCodeFenceLanguages(md: string): string {
   return lines.join("\n");
 }
 
+/**
+ * Normalize GFM table rows: trim each cell to single-space padding and collapse
+ * separator rows to bare `---`. Editors align table columns differently (Crepe
+ * pads to the widest cell; a hand-written table may not), so without this every
+ * table line looks changed. Fence-aware, so a `|`-containing line inside a code
+ * block (e.g. a shell pipe or a documented table) is left untouched.
+ */
+export function normalizeTableRows(md: string): string {
+  const lines = md.split("\n");
+  let inFence = false;
+  let marker = "";
+  for (let i = 0; i < lines.length; i++) {
+    const fence = /^(\s*)(`{3,}|~{3,})(.*)$/.exec(lines[i]);
+    if (fence) {
+      if (!inFence) {
+        inFence = true;
+        marker = fence[2][0];
+      } else if (fence[2][0] === marker && fence[3].trim() === "") {
+        inFence = false;
+      }
+      continue;
+    }
+    if (inFence || !/^\s*\|.*\|\s*$/.test(lines[i])) {
+      continue;
+    }
+    const cells = lines[i].trim().slice(1, -1).split("|").map((c) => c.trim());
+    const isSeparator = cells.every((c) => /^:?-+:?$/.test(c));
+    lines[i] = "| " + cells.map((c) => (isSeparator ? "---" : c)).join(" | ") + " |";
+  }
+  return lines.join("\n");
+}
+
 export function canonicalizeMarkdown(md: string): string {
   const isListItem = (l: string) => /^\s*([-*+]|\d+[.)])\s+/.test(l);
   const isBlank = (l: string) => l.trim() === "";
 
-  const lines = normalizeCodeFenceLanguages(md)
+  const lines = normalizeTableRows(normalizeCodeFenceLanguages(md))
     .replace(/[ \t]+$/gm, "")
     .split("\n")
     .map((l) => l.replace(/^(\s*)[*+](\s+)/, "$1-$2"))

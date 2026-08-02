@@ -15,6 +15,7 @@
  * "Rich Notes: Open Milkdown spike (dev)" command on the feat/milkdown branch.
  */
 import { Crepe } from "@milkdown/crepe";
+import { canonicalizeMarkdown } from "../markdown";
 import "@milkdown/crepe/theme/common/style.css";
 import "@milkdown/crepe/theme/frame.css";
 import "./milkdown-spike.css";
@@ -54,13 +55,14 @@ mkdir -p ~/Downloads/attacker-source
 `;
 
 // Build the spike's UI shell inside #root.
-function buildShell(): { editor: HTMLElement; out: HTMLElement; status: HTMLElement } {
+function buildShell(): void {
   const root = document.getElementById("root")!;
   root.innerHTML = `
     <div class="spike-bar">
       <strong>Milkdown Crepe — Phase 0 spike</strong>
       <button id="recheck" type="button">Re-check round-trip</button>
-      <span id="status" class="spike-status"></span>
+      <span class="spike-label">raw:</span><span id="statusRaw" class="spike-status"></span>
+      <span class="spike-label">canonical:</span><span id="statusCanon" class="spike-status"></span>
     </div>
     <div class="spike-body">
       <div id="editor" class="spike-editor"></div>
@@ -69,11 +71,6 @@ function buildShell(): { editor: HTMLElement; out: HTMLElement; status: HTMLElem
         <pre id="out"></pre>
       </div>
     </div>`;
-  return {
-    editor: document.getElementById("editor")!,
-    out: document.getElementById("out")!,
-    status: document.getElementById("status")!,
-  };
 }
 
 // A minimal line-level drift report so we can see WHAT changed, not just that
@@ -90,20 +87,43 @@ function firstDiff(a: string, b: string): string {
   return "";
 }
 
+function setStatus(el: HTMLElement, ok: boolean): void {
+  el.textContent = ok ? "✓ zero drift" : "✗ drift";
+  el.className = "spike-status " + (ok ? "ok" : "bad");
+}
+
 async function main() {
-  const { out, status } = buildShell();
+  buildShell();
+  const out = document.getElementById("out")!;
+  const statusRaw = document.getElementById("statusRaw")!;
+  const statusCanon = document.getElementById("statusCanon")!;
   const crepe = new Crepe({ root: document.getElementById("editor")!, defaultValue: SAMPLE });
   await crepe.create();
 
   const check = () => {
     const output = crepe.getMarkdown();
-    out.textContent = output;
-    const match = output.trim() === SAMPLE.trim();
-    status.textContent = match ? "✓ ZERO DRIFT" : "✗ DRIFT — see below";
-    status.className = "spike-status " + (match ? "ok" : "bad");
-    if (!match) {
-      out.textContent = output + "\n\n---- first diff ----\n" + firstDiff(SAMPLE, output);
+
+    // Raw: exact string round-trip (expected to drift on cosmetic formatting).
+    const rawMatch = output.trim() === SAMPLE.trim();
+    setStatus(statusRaw, rawMatch);
+
+    // Canonical: the comparator our sync/change-detection actually uses. If these
+    // match, the round-trip produces NO change our system would ever see — the
+    // meaningful "zero drift" result.
+    const canonIn = canonicalizeMarkdown(SAMPLE);
+    const canonOut = canonicalizeMarkdown(output);
+    const canonMatch = canonIn === canonOut;
+    setStatus(statusCanon, canonMatch);
+
+    let report = "getMarkdown() output:\n\n" + output;
+    if (!rawMatch) {
+      report += "\n\n---- first RAW diff (cosmetic) ----\n" + firstDiff(SAMPLE, output);
     }
+    report += "\n\n---- CANONICAL comparison (what sync sees) ----\n";
+    report += canonMatch
+      ? "✓ identical after canonicalizeMarkdown() — zero effective drift"
+      : "✗ first canonical diff:\n" + firstDiff(canonIn, canonOut);
+    out.textContent = report;
   };
 
   document.getElementById("recheck")!.addEventListener("click", check);
