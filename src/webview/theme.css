@@ -95,6 +95,15 @@ body,
 }
 /* Glowy accent border for the slash menu (uses the theme's focus/accent color). */
 .milkdown .milkdown-slash-menu {
+  /*
+   * Force a fully OPAQUE surface: --vscode-editorWidget-background can carry
+   * alpha in some themes, which let editor text bleed through the menu. Prefer
+   * the (opaque) menu background, then a solid editor background.
+   */
+  background-color: var(--vscode-menu-background, var(--vscode-editor-background)) !important;
+  /* Clip the scrollable inner content to the rounded corners (fixes the
+     bottom-right). The outer glow paints outside the box, so it's unaffected. */
+  overflow: hidden;
   border-color: color-mix(in srgb, var(--vscode-focusBorder), transparent 25%);
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--vscode-focusBorder), transparent 45%),
