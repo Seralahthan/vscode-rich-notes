@@ -1,8 +1,39 @@
 import { Crepe } from "@milkdown/crepe";
+import { commandsCtx, editorViewCtx } from "@milkdown/kit/core";
+import { clearTextInCurrentBlockCommand } from "@milkdown/kit/preset/commonmark";
+import type { Ctx } from "@milkdown/kit/ctx";
 import { canonicalizeForFile } from "../markdown";
 import "@milkdown/crepe/theme/common/style.css";
 import "@milkdown/crepe/theme/frame.css";
 import "./theme.css";
+
+// Minimal inline SVG icons (Crepe menu icons are raw SVG strings).
+const ICON_VIDEO =
+  '<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z"/></svg>';
+const ICON_AUDIO =
+  '<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05A4.47 4.47 0 0 0 16.5 12z"/></svg>';
+const ICON_FILE =
+  '<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6H6zm7 1.5L18.5 9H13V3.5z"/></svg>';
+
+/**
+ * Insert a markdown link at the cursor (clearing the "/query" first). Notion
+ * represents File/Video/Audio blocks as plain markdown links, so these stay
+ * clean, portable markdown that round-trips to Notion. The user edits the URL
+ * via Milkdown's link tooltip after inserting.
+ */
+function insertLink(ctx: Ctx, label: string, href: string): void {
+  ctx.get(commandsCtx).call(clearTextInCurrentBlockCommand.key);
+  const view = ctx.get(editorViewCtx);
+  const { state } = view;
+  const linkMark = state.schema.marks.link;
+  const from = state.selection.from;
+  const tr = state.tr.insertText(label, from);
+  if (linkMark) {
+    tr.addMark(from, from + label.length, linkMark.create({ href }));
+  }
+  view.dispatch(tr.scrollIntoView());
+  view.focus();
+}
 
 // Minimal typing for the VS Code webview bridge.
 declare function acquireVsCodeApi(): {
@@ -47,7 +78,35 @@ async function mountCrepe(markdown: string): Promise<void> {
     crepe = null;
   }
   rootEl().innerHTML = "";
-  const c = new Crepe({ root: rootEl(), defaultValue: markdown });
+  const c = new Crepe({
+    root: rootEl(),
+    defaultValue: markdown,
+    featureConfigs: {
+      [Crepe.Feature.BlockEdit]: {
+        // Extend the default slash menu with a Media group. These insert plain
+        // markdown links (how Notion represents File/Video/Audio), so they stay
+        // clean, portable markdown.
+        buildMenu: (builder) => {
+          const media = builder.addGroup("rn-media", "Media");
+          media.addItem("rn-video", {
+            label: "Video",
+            icon: ICON_VIDEO,
+            onRun: (ctx) => insertLink(ctx, "video", "https://"),
+          });
+          media.addItem("rn-audio", {
+            label: "Audio",
+            icon: ICON_AUDIO,
+            onRun: (ctx) => insertLink(ctx, "audio", "https://"),
+          });
+          media.addItem("rn-file", {
+            label: "File",
+            icon: ICON_FILE,
+            onRun: (ctx) => insertLink(ctx, "file", "https://"),
+          });
+        },
+      },
+    },
+  });
   c.on((listener) => {
     listener.markdownUpdated(() => {
       if (!applyingRemote) {

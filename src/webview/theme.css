@@ -93,6 +93,14 @@ body,
   background: var(--vscode-editorWidget-background, var(--vscode-menu-background)) !important;
   border: 1px solid var(--vscode-widget-border, var(--vscode-editorWidget-border));
 }
+/* Glowy accent border for the slash menu (uses the theme's focus/accent color). */
+.milkdown .milkdown-slash-menu {
+  border-color: color-mix(in srgb, var(--vscode-focusBorder), transparent 25%);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--vscode-focusBorder), transparent 45%),
+    0 0 18px color-mix(in srgb, var(--vscode-focusBorder), transparent 50%),
+    0 10px 28px rgba(0, 0, 0, 0.45);
+}
 .milkdown .milkdown-slash-menu .tab-group ul li.selected {
   background: var(--vscode-list-activeSelectionBackground);
   color: var(--vscode-list-activeSelectionForeground);
