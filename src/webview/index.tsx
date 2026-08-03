@@ -26,6 +26,8 @@ const ICON_AUDIO =
   '<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05A4.47 4.47 0 0 0 16.5 12z"/></svg>';
 const ICON_FILE =
   '<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6H6zm7 1.5L18.5 9H13V3.5z"/></svg>';
+const ICON_COPY =
+  '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg>';
 
 /**
  * Insert a markdown link at the cursor (clearing the "/query" first). Notion
@@ -94,6 +96,12 @@ async function mountCrepe(markdown: string): Promise<void> {
     root: rootEl(),
     defaultValue: markdown,
     featureConfigs: {
+      // Code blocks work out of the box (Crepe ships a copy button that reaches
+      // the OS clipboard); we only swap its default emoji icon for an SVG that
+      // matches the rest of the toolbar.
+      [Crepe.Feature.CodeMirror]: {
+        copyIcon: ICON_COPY,
+      },
       [Crepe.Feature.BlockEdit]: {
         // Extend the default slash menu with a Media group. These insert plain
         // markdown links (how Notion represents File/Video/Audio), so they stay
