@@ -220,6 +220,108 @@ body,
   background: rgba(0, 0, 0, 0.7);
   border-radius: 4px;
 }
+
+/* --- Floating overlay toolbar + actions menu (top-right of an embed) ------ */
+.milkdown .rn-video-embed {
+  position: relative;
+}
+.milkdown .rn-video-overlay {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 5;
+}
+.milkdown .rn-video-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
+  border: 1px solid var(--vscode-widget-border, var(--vscode-editorWidget-border));
+  border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+/* Reveal on hover of the embed, and keep visible while the menu is open. */
+.milkdown .rn-video-embed:hover .rn-video-tools,
+.milkdown .rn-video-overlay:has(.rn-video-menu.open) .rn-video-tools {
+  opacity: 1;
+}
+.milkdown .rn-video-tool {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  font: inherit;
+  color: var(--vscode-menu-foreground, var(--vscode-editor-foreground));
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.milkdown .rn-video-tool:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+/* Hover tooltip (Notion-style dark pill above the icon). */
+.milkdown .rn-video-tool[data-tip]:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--vscode-editorHoverWidget-foreground, var(--vscode-editor-foreground));
+  background: var(--vscode-editorHoverWidget-background, var(--vscode-menu-background));
+  border: 1px solid var(--vscode-editorHoverWidget-border, var(--vscode-widget-border));
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  z-index: 10;
+}
+
+.milkdown .rn-video-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 190px;
+  padding: 4px;
+  background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
+  border: 1px solid var(--vscode-widget-border, var(--vscode-editorWidget-border));
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.milkdown .rn-video-menu.open {
+  display: block;
+}
+.milkdown .rn-video-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  color: var(--vscode-menu-foreground, var(--vscode-editor-foreground));
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.milkdown .rn-video-menu-item:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+.milkdown .rn-video-menu-icon {
+  display: inline-flex;
+  color: var(--vscode-icon-foreground, var(--vscode-descriptionForeground));
+}
 .milkdown .rn-video-icon {
   display: inline-flex;
   color: var(--vscode-textLink-foreground, var(--vscode-focusBorder));

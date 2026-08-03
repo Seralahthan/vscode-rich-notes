@@ -9,12 +9,15 @@ import {
   videoEmbedView,
   insertVideoEmbed,
 } from "./videoEmbed";
+import { bareLinkSync } from "./linkSync";
 import "@milkdown/crepe/theme/common/style.css";
 import "@milkdown/crepe/theme/frame.css";
 import "./theme.css";
 
-// Open a URL in the user's browser via the extension host.
+// Open a URL in the user's browser / write to the clipboard via the extension
+// host (webview clipboard access is unreliable).
 const openExternal = (url: string) => vscode.postMessage({ type: "openExternal", url });
+const copyText = (text: string) => vscode.postMessage({ type: "copyText", text });
 
 // Minimal inline SVG icons (Crepe menu icons are raw SVG strings).
 const ICON_VIDEO =
@@ -119,7 +122,11 @@ async function mountCrepe(markdown: string): Promise<void> {
   // Custom video-embed block (renders recognized video links as a card; stays
   // clean `[url](url)` markdown).
   c.addFeature((editor: any) => {
-    editor.use(videoEmbedRemark).use(videoEmbedSchema).use(videoEmbedView(openExternal));
+    editor
+      .use(videoEmbedRemark)
+      .use(videoEmbedSchema)
+      .use(videoEmbedView(openExternal, copyText))
+      .use(bareLinkSync);
   });
   c.on((listener) => {
     listener.markdownUpdated(() => {
