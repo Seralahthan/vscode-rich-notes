@@ -66,6 +66,18 @@ body,
 .milkdown .editor h3 {
   font-size: 1.25em;
 }
+/* Crepe's reset sizes h4/h5/h6 at 28/24/18px — far larger than our h3. Continue
+ * the scale (GitHub/VS Code proportions) so H4 reads as a small heading, not a
+ * giant one. h4 matches body size but stays bold via the heading font-weight. */
+.milkdown .editor h4 {
+  font-size: 1em;
+}
+.milkdown .editor h5 {
+  font-size: 0.875em;
+}
+.milkdown .editor h6 {
+  font-size: 0.85em;
+}
 
 /* Make list bullets, numbers, and checkboxes clearly visible on dark themes. */
 .milkdown .milkdown-list-item-block li .label-wrapper,

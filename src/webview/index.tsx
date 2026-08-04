@@ -1,6 +1,9 @@
 import { Crepe } from "@milkdown/crepe";
 import { commandsCtx, editorViewCtx } from "@milkdown/kit/core";
-import { clearTextInCurrentBlockCommand } from "@milkdown/kit/preset/commonmark";
+import {
+  clearTextInCurrentBlockCommand,
+  wrapInHeadingCommand,
+} from "@milkdown/kit/preset/commonmark";
 import type { Ctx } from "@milkdown/kit/ctx";
 import { canonicalizeForFile } from "../markdown";
 import {
@@ -10,6 +13,14 @@ import {
   insertVideoEmbed,
 } from "./videoEmbed";
 import { bareLinkSync } from "./linkSync";
+import {
+  toggleSchema,
+  toggleSummarySchema,
+  toggleRemark,
+  toggleView,
+  insertToggle,
+} from "./toggle";
+import { normalizeToggles } from "../toggleMarkdown";
 import "@milkdown/crepe/theme/common/style.css";
 import "@milkdown/crepe/theme/frame.css";
 import "./theme.css";
@@ -28,6 +39,31 @@ const ICON_FILE =
   '<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6H6zm7 1.5L18.5 9H13V3.5z"/></svg>';
 const ICON_COPY =
   '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg>';
+const ICON_TOGGLE =
+  '<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M8 6l6 6-6 6V6z"/><path d="M2 4h2v16H2z" opacity="0"/></svg>';
+// "H1"/"H2"/"H3" labels for the selection toolbar's heading controls.
+const headingIcon = (level: number) =>
+  `<svg viewBox="0 0 24 24" width="24" height="24"><text x="12" y="17" font-size="13" font-weight="700" text-anchor="middle" fill="currentColor" font-family="inherit">H${level}</text></svg>`;
+
+/** The heading level of the block the selection is in, or 0 for a paragraph. */
+function currentHeadingLevel(ctx: Ctx): number {
+  const node = ctx.get(editorViewCtx).state.selection.$from.parent;
+  return node?.type.name === "heading" ? (node.attrs.level as number) ?? 0 : 0;
+}
+
+/** A selection-toolbar item that toggles the current block to heading `level`. */
+function headingToolbarItem(level: number) {
+  return {
+    icon: headingIcon(level),
+    active: (ctx: Ctx) => currentHeadingLevel(ctx) === level,
+    // Clicking the active level again turns the heading back into plain text
+    // (level < 1 → paragraph), matching the previous editor's behaviour.
+    onRun: (ctx: Ctx) => {
+      const target = currentHeadingLevel(ctx) === level ? 0 : level;
+      ctx.get(commandsCtx).call(wrapInHeadingCommand.key, target);
+    },
+  };
+}
 
 /**
  * Insert a markdown link at the cursor (clearing the "/query" first). Notion
@@ -94,7 +130,9 @@ async function mountCrepe(markdown: string): Promise<void> {
   rootEl().innerHTML = "";
   const c = new Crepe({
     root: rootEl(),
-    defaultValue: markdown,
+    // Canonicalize toggles to the blank-line <details> form so the remark fold
+    // sees a clean opener/body/closer regardless of how they were stored.
+    defaultValue: normalizeToggles(markdown),
     featureConfigs: {
       // Code blocks work out of the box (Crepe ships a copy button that reaches
       // the OS clipboard); we only swap its default emoji icon for an SVG that
@@ -102,7 +140,22 @@ async function mountCrepe(markdown: string): Promise<void> {
       [Crepe.Feature.CodeMirror]: {
         copyIcon: ICON_COPY,
       },
+      // Selection toolbar: add H1/H2/H3 controls (Crepe ships only bold/italic/
+      // strikethrough/code/link) so heading level can be changed from the
+      // toolbar, as in the previous editor. buildToolbar extends the defaults.
+      [Crepe.Feature.Toolbar]: {
+        buildToolbar: (builder) => {
+          const g = builder.addGroup("rn-heading", "Heading");
+          g.addItem("rn-h1", headingToolbarItem(1));
+          g.addItem("rn-h2", headingToolbarItem(2));
+          g.addItem("rn-h3", headingToolbarItem(3));
+          g.addItem("rn-h4", headingToolbarItem(4));
+        },
+      },
       [Crepe.Feature.BlockEdit]: {
+        // Notion only has heading levels 1–4, so drop H5/H6 from the slash menu
+        // (setting the item to null removes it) to keep parity and clean sync.
+        textGroup: { h5: null, h6: null },
         // Extend the default slash menu with a Media group. These insert plain
         // markdown links (how Notion represents File/Video/Audio), so they stay
         // clean, portable markdown.
@@ -123,6 +176,14 @@ async function mountCrepe(markdown: string): Promise<void> {
             icon: ICON_FILE,
             onRun: (ctx) => insertLink(ctx, "file", "https://"),
           });
+          // Toggle (collapsible) list, alongside the built-in lists. Serializes
+          // to <details>/<summary> markdown and pushes to Notion as a real
+          // toggle block (see ../toggleMarkdown + notionSync).
+          builder.getGroup("list").addItem("rn-toggle", {
+            label: "Toggle list",
+            icon: ICON_TOGGLE,
+            onRun: (ctx) => insertToggle(ctx),
+          });
         },
       },
     },
@@ -134,7 +195,12 @@ async function mountCrepe(markdown: string): Promise<void> {
       .use(videoEmbedRemark)
       .use(videoEmbedSchema)
       .use(videoEmbedView(openExternal, copyText))
-      .use(bareLinkSync);
+      .use(bareLinkSync)
+      // Toggle-list (collapsible) block: remark fold + schema + node view.
+      .use(toggleRemark)
+      .use(toggleSummarySchema)
+      .use(toggleSchema)
+      .use(toggleView());
   });
   c.on((listener) => {
     listener.markdownUpdated(() => {

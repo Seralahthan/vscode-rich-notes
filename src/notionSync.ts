@@ -1,9 +1,10 @@
 import * as vscode from "vscode";
 import { Client } from "@notionhq/client";
-import { markdownToBlocks } from "@tryfabric/martian";
+import { markdownToBlocks, markdownToRichText } from "@tryfabric/martian";
 import { NotionToMarkdown } from "notion-to-md";
 import { NotionLink, linkFrom } from "./frontmatter";
 import { splitSoftBreaks } from "./markdown";
+import { splitToggles } from "./toggleMarkdown";
 
 const SECRET_KEY = "richNotes.notionToken";
 
@@ -52,8 +53,37 @@ function createClient(token: string): Client {
 
 // martian returns Notion block-request objects; their precise type is awkward,
 // so we treat them loosely here.
+//
+// martian has no `html` handler, so it silently drops `<details>` toggles. We
+// split the markdown around top-level toggles, convert the plain-markdown spans
+// with martian, and build native Notion `toggle` blocks ourselves (summary ->
+// rich_text, body -> children, recursively for nested toggles). This is the push
+// half of full toggle-list fidelity; notion-to-md already emits `<details>` on
+// pull.
 function toNotionBlocks(markdown: string): any[] {
-  return markdownToBlocks(markdown) as any[];
+  const segments = splitToggles(markdown);
+  if (segments.length === 1 && segments[0].type === "md") {
+    return markdownToBlocks(markdown) as any[]; // fast path: no toggles
+  }
+  const blocks: any[] = [];
+  for (const seg of segments) {
+    if (seg.type === "md") {
+      const text = seg.text.trim();
+      if (text) {
+        blocks.push(...(markdownToBlocks(text) as any[]));
+      }
+    } else {
+      blocks.push({
+        object: "block",
+        type: "toggle",
+        toggle: {
+          rich_text: markdownToRichText(seg.summary || " "),
+          children: toNotionBlocks(seg.body),
+        },
+      });
+    }
+  }
+  return blocks;
 }
 
 async function appendInBatches(

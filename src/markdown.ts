@@ -1,3 +1,5 @@
+import { normalizeToggles } from "./toggleMarkdown";
+
 /**
  * Canonicalize markdown so two stylistically-different but equivalent documents
  * compare/diff cleanly. Our local export uses "*" loose lists; notion-to-md
@@ -110,7 +112,7 @@ export function canonicalizeForFile(md: string): string {
 
   let inFence = false;
   let marker = "";
-  const lines = normalizeTableRows(md)
+  const lines = normalizeTableRows(normalizeToggles(md))
     .replace(/[ \t]+$/gm, "")
     .split("\n")
     .map((l) => {
@@ -172,7 +174,7 @@ export function canonicalizeMarkdown(md: string): string {
   const isListItem = (l: string) => /^\s*([-*+]|\d+[.)])\s+/.test(l);
   const isBlank = (l: string) => l.trim() === "";
 
-  const lines = normalizeTableRows(normalizeCodeFenceLanguages(md))
+  const lines = normalizeTableRows(normalizeCodeFenceLanguages(normalizeToggles(md)))
     .replace(/[ \t]+$/gm, "")
     .split("\n")
     .map((l) => l.replace(/^(\s*)[*+](\s+)/, "$1-$2"))
