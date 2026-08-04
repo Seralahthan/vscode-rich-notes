@@ -15,6 +15,8 @@ import {
 } from "./videoEmbed";
 import { bareLinkSync } from "./linkSync";
 import { headingContext } from "./headingContext";
+import { slashMenu } from "./slashMenu";
+import { mathRevert } from "./mathRevert";
 import {
   lineNumbers,
   recomputeLineNumbers,
@@ -234,6 +236,10 @@ async function mountCrepe(markdown: string): Promise<void> {
       .use(bareLinkSync)
       // Show the toolbar's heading buttons only when the caret is in a heading.
       .use(headingContext)
+      // Mid-sentence "/" command menu (complements Crepe's line-start slash).
+      .use(slashMenu)
+      // Escape on a selected inline equation reverts it to plain text.
+      .use(mathRevert)
       // Source-line gutter (numbers come from the .md the host holds).
       .use(lineNumbers)
       // Toggle-list (collapsible) block: remark fold + schema + node view.

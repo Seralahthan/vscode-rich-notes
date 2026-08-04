@@ -426,3 +426,62 @@ body.rn-line-numbers .milkdown .editor > [data-rn-line]::before {
   user-select: none;
   pointer-events: none;
 }
+
+/*
+ * Mid-sentence "/" command menu (slashMenu.ts). Rendered on document.body (so it
+ * escapes the editor's overflow), styled to match Crepe's slash menu.
+ */
+.rn-slash {
+  position: fixed;
+  z-index: 1000;
+  display: none;
+  min-width: 200px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: 8px;
+  background: var(--vscode-menu-background, var(--vscode-editorWidget-background));
+  border: 1px solid color-mix(in srgb, var(--vscode-focusBorder), transparent 25%);
+  box-shadow:
+    0 0 0 6px var(--vscode-editor-background),
+    0 0 16px 6px color-mix(in srgb, var(--vscode-focusBorder), transparent 55%),
+    0 12px 30px 4px rgba(0, 0, 0, 0.5);
+  font-family: var(--vscode-font-family);
+  font-size: 13px;
+}
+.rn-slash-group {
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--vscode-descriptionForeground);
+}
+.rn-slash-item {
+  padding: 6px 10px;
+  border-radius: 5px;
+  color: var(--vscode-menu-foreground, var(--vscode-editor-foreground));
+  cursor: pointer;
+}
+.rn-slash-item.selected {
+  background: var(--vscode-list-activeSelectionBackground);
+  color: var(--vscode-list-activeSelectionForeground);
+}
+
+/*
+ * Inline-LaTeX editor tooltip. Crepe styles it with --crepe-color-surface (our
+ * editor background), so it merges into the page with no border. Give it the
+ * same elevated, glowing surface as the slash menu so the LaTeX input is clearly
+ * readable. Used by BOTH the Σ toolbar (format selection as equation) and the
+ * /eq inline menu — they share this one element.
+ */
+.milkdown .milkdown-latex-inline-edit {
+  background-color: var(--vscode-menu-background, var(--vscode-editorWidget-background)) !important;
+  border: 1px solid color-mix(in srgb, var(--vscode-focusBorder), transparent 25%);
+  box-shadow:
+    0 0 0 6px var(--vscode-editor-background),
+    0 0 16px 6px color-mix(in srgb, var(--vscode-focusBorder), transparent 55%),
+    0 12px 30px 4px rgba(0, 0, 0, 0.5);
+}
+.milkdown .milkdown-latex-inline-edit .ProseMirror {
+  color: var(--vscode-input-foreground, var(--vscode-editor-foreground));
+}
