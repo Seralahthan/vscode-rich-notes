@@ -105,6 +105,18 @@ body,
   background: var(--vscode-editorWidget-background, var(--vscode-menu-background)) !important;
   border: 1px solid var(--vscode-widget-border, var(--vscode-editorWidget-border));
 }
+
+/*
+ * Context-aware selection toolbar: heading (H1–H4) buttons only make sense when
+ * the caret is inside a heading. headingContext.ts sets html[data-rn-heading]
+ * accordingly; otherwise hide those buttons (and the divider that precedes them)
+ * so a plain word never shows heading controls. (:has needs no `.milkdown`
+ * prefix, so it works even if the toolbar is portaled out of the editor root.)
+ */
+html:not([data-rn-heading]) .milkdown-toolbar button:has(svg.rn-heading-tool),
+html:not([data-rn-heading]) .milkdown-toolbar .divider:has(+ button:has(svg.rn-heading-tool)) {
+  display: none !important;
+}
 /* Glowy accent border for the slash menu (uses the theme's focus/accent color). */
 .milkdown .milkdown-slash-menu {
   /*

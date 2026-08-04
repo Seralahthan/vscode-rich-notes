@@ -43,8 +43,11 @@ const ICON_COPY =
 const ICON_TOGGLE =
   '<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M8 6l6 6-6 6V6z"/><path d="M2 4h2v16H2z" opacity="0"/></svg>';
 // "H1"/"H2"/"H3" labels for the selection toolbar's heading controls.
+// The `rn-heading-tool` class is a CSS hook: the selection toolbar hides these
+// heading buttons unless the caret is inside a heading (see headingContext +
+// theme.css). DOMPurify (Crepe's icon sanitizer) preserves the class.
 const headingIcon = (level: number) =>
-  `<svg viewBox="0 0 24 24" width="24" height="24"><text x="12" y="17" font-size="13" font-weight="700" text-anchor="middle" fill="currentColor" font-family="inherit">H${level}</text></svg>`;
+  `<svg class="rn-heading-tool" viewBox="0 0 24 24" width="24" height="24"><text x="12" y="17" font-size="13" font-weight="700" text-anchor="middle" fill="currentColor" font-family="inherit">H${level}</text></svg>`;
 
 /** The heading level of the block the selection is in, or 0 for a paragraph. */
 function currentHeadingLevel(ctx: Ctx): number {
