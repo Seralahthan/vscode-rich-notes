@@ -389,3 +389,40 @@ html:not([data-rn-heading]) .milkdown-toolbar .divider:has(+ button:has(svg.rn-h
   color: var(--vscode-descriptionForeground);
   text-align: center;
 }
+
+/*
+ * Source-line gutter. lineNumbers.ts adds a `data-rn-line` node decoration to
+ * each top-level block (the line it starts on in the underlying .md); the editor
+ * gets left room and each block draws its number in the gutter. Only shown when
+ * the `rn-line-numbers` body class is set (richNotes.showLineNumbers).
+ */
+body.rn-line-numbers .milkdown .editor {
+  /* Left-align (drop the auto-centering) so the gutter sits at the panel's very
+   * left edge, like the raw source view. The wide left pad forms a gutter that
+   * holds the line numbers (far left) AND Crepe's +/drag handle (nearer the
+   * text), with the content spaced clear of both. */
+  margin-left: 0;
+  padding-left: 7em;
+}
+body.rn-line-numbers .milkdown .editor > [data-rn-line] {
+  position: relative;
+}
+body.rn-line-numbers .milkdown .editor > [data-rn-line]::before {
+  content: attr(data-rn-line);
+  position: absolute;
+  /* Far left of the panel: number occupies ~0–2.2em; the block handle lives in
+   * the gap between it and the text (~3–6.5em). */
+  left: -7em;
+  top: 0.35em;
+  width: 2.2em;
+  text-align: right;
+  color: var(--vscode-editorLineNumber-foreground, var(--vscode-descriptionForeground));
+  font-family: var(--vscode-editor-font-family, monospace);
+  /* Fixed px (not em) so every number is the same size regardless of the block's
+   * font size — a line number by an H1 is the same as one by body text. */
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0.75;
+  user-select: none;
+  pointer-events: none;
+}

@@ -14,6 +14,13 @@ import {
   insertVideoEmbed,
 } from "./videoEmbed";
 import { bareLinkSync } from "./linkSync";
+import { headingContext } from "./headingContext";
+import {
+  lineNumbers,
+  recomputeLineNumbers,
+  setLineOffset,
+  setLineNumbersEnabled,
+} from "./lineNumbers";
 import {
   toggleSchema,
   toggleSummarySchema,
@@ -110,6 +117,24 @@ function currentMarkdown(): string {
   return crepe ? canonicalizeForFile(crepe.getMarkdown()) : "";
 }
 
+/** Recompute the source-line gutter for the current document. */
+function refreshLineNumbers(): void {
+  if (!crepe) {
+    return;
+  }
+  // Don't recompute while the slash menu is open: swapping the decoration set
+  // re-touches block DOM and can disrupt the menu's caret/filtering. The next
+  // edit (e.g. picking a menu item) recomputes once it has closed.
+  if (document.querySelector('.milkdown-slash-menu[data-show="true"]')) {
+    return;
+  }
+  try {
+    crepe.editor.action((ctx) => recomputeLineNumbers(ctx));
+  } catch {
+    /* line numbers are non-critical; never let a recompute break editing */
+  }
+}
+
 /** Debounced push of a user edit back to the host. */
 function scheduleEdit(): void {
   if (debounce) {
@@ -122,6 +147,8 @@ function scheduleEdit(): void {
     }
     lastSerialized = markdown;
     vscode.postMessage({ type: "edit", text: markdown });
+    // Line structure changed → refresh the gutter (cheap, already debounced).
+    refreshLineNumbers();
   }, 250);
 }
 
@@ -160,6 +187,11 @@ async function mountCrepe(markdown: string): Promise<void> {
         // Notion only has heading levels 1–4, so drop H5/H6 from the slash menu
         // (setting the item to null removes it) to keep parity and clean sync.
         textGroup: { h5: null, h6: null },
+        // Keep the +/drag handle hugging the text (small offset) so with the
+        // line-number gutter it sits between the numbers and the content instead
+        // of flipping to the right for lack of left room. (getPlacement default
+        // is preserved — this only overrides the offset.)
+        blockHandle: { getOffset: () => 6 },
         // Extend the default slash menu with a Media group. These insert plain
         // markdown links (how Notion represents File/Video/Audio), so they stay
         // clean, portable markdown.
@@ -200,6 +232,10 @@ async function mountCrepe(markdown: string): Promise<void> {
       .use(videoEmbedSchema)
       .use(videoEmbedView(openExternal, copyText))
       .use(bareLinkSync)
+      // Show the toolbar's heading buttons only when the caret is in a heading.
+      .use(headingContext)
+      // Source-line gutter (numbers come from the .md the host holds).
+      .use(lineNumbers)
       // Toggle-list (collapsible) block: remark fold + schema + node view.
       .use(toggleRemark)
       .use(toggleSummarySchema)
@@ -232,6 +268,7 @@ async function setContent(markdown: string): Promise<void> {
   try {
     await mountCrepe(markdown);
     lastSerialized = currentMarkdown();
+    refreshLineNumbers();
   } finally {
     // Let the create-time markdownUpdated events settle before re-enabling edit
     // echoes.
@@ -245,6 +282,12 @@ async function setContent(markdown: string): Promise<void> {
 window.addEventListener("message", (event: MessageEvent) => {
   const msg = event.data;
   if (msg && msg.type === "setContent") {
+    // The host supplies the frontmatter line offset and the gutter on/off flag
+    // alongside the body, so the numbers match the actual file.
+    setLineOffset(Number(msg.lineOffset ?? 0));
+    const showLines = msg.showLineNumbers !== false;
+    setLineNumbersEnabled(showLines);
+    document.body.classList.toggle("rn-line-numbers", showLines);
     void setContent(String(msg.text ?? ""));
   }
 });

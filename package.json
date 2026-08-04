@@ -133,6 +133,11 @@
           "default": true,
           "markdownDescription": "Automatically save notes opened in the Rich Notes editor shortly after you stop typing."
         },
+        "richNotes.showLineNumbers": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show a source-line gutter in the Rich Notes editor. Because the editor is block-based, each top-level block is labelled with the line it starts on in the underlying `.md` file (numbers are sparse, not one per visual row)."
+        },
         "richNotes.autoSaveDelay": {
           "type": "number",
           "default": 1000,

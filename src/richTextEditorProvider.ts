@@ -70,11 +70,21 @@ export class RichNotesEditorProvider implements vscode.CustomTextEditorProvider 
       }, delay);
     };
 
-    // Send the note's body (frontmatter stripped) to the editor.
+    // Send the note's body (frontmatter stripped) to the editor, plus the
+    // frontmatter line offset and gutter setting so the editor's source-line
+    // numbers line up with the actual file.
     const postDocumentToWebview = () => {
       updatingFromDocument = true;
-      const { body } = parseNote(document.getText());
-      webview.postMessage({ type: "setContent", text: body });
+      const full = document.getText();
+      const { body } = parseNote(full);
+      // Lines the frontmatter block occupies before the body begins (body is the
+      // tail of `full`, so the stripped prefix is everything before it).
+      const prefix = full.slice(0, Math.max(0, full.length - body.length));
+      const lineOffset = prefix ? (prefix.match(/\n/g)?.length ?? 0) : 0;
+      const showLineNumbers = vscode.workspace
+        .getConfiguration("richNotes")
+        .get<boolean>("showLineNumbers", true);
+      webview.postMessage({ type: "setContent", text: body, lineOffset, showLineNumbers });
     };
 
     // Apply an edited body from the webview: re-attach the current frontmatter
