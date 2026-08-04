@@ -1,5 +1,6 @@
 import { Crepe } from "@milkdown/crepe";
 import { commandsCtx, editorViewCtx } from "@milkdown/kit/core";
+import { undoCommand, redoCommand } from "@milkdown/kit/plugin/history";
 import {
   clearTextInCurrentBlockCommand,
   wrapInHeadingCommand,
@@ -244,5 +245,41 @@ window.addEventListener("message", (event: MessageEvent) => {
     void setContent(String(msg.text ?? ""));
   }
 });
+
+/** Run Milkdown's own undo/redo on the current editor. */
+function runHistory(command: "undo" | "redo"): void {
+  if (!crepe) {
+    return;
+  }
+  crepe.editor.action((ctx) => {
+    ctx.get(commandsCtx).call(command === "undo" ? undoCommand.key : redoCommand.key);
+  });
+}
+
+// Own undo/redo entirely inside the editor. Each webview edit is applied to the
+// underlying TextDocument as a whole-document WorkspaceEdit; if Cmd+Z reaches VS
+// Code it undoes that edit and pushes fresh text back, forcing a full re-mount
+// (scroll/cursor jump to the very top of a long note). Intercepting in the
+// capture phase and stopping the event means only Milkdown's granular history
+// runs — undo happens in place, right where the edit was. stopImmediatePropagation
+// also prevents Crepe's own keymap from double-undoing.
+window.addEventListener(
+  "keydown",
+  (e: KeyboardEvent) => {
+    if (!(e.metaKey || e.ctrlKey) || !crepe) {
+      return;
+    }
+    const key = e.key.toLowerCase();
+    const isUndo = key === "z" && !e.shiftKey;
+    const isRedo = (key === "z" && e.shiftKey) || key === "y";
+    if (!isUndo && !isRedo) {
+      return;
+    }
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    runHistory(isUndo ? "undo" : "redo");
+  },
+  true
+);
 
 vscode.postMessage({ type: "ready" });
