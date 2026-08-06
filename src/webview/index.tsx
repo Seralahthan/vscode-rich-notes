@@ -1,6 +1,28 @@
 import { Crepe } from "@milkdown/crepe";
 import { commandsCtx, editorViewCtx } from "@milkdown/kit/core";
 import { undoCommand, redoCommand } from "@milkdown/kit/plugin/history";
+import { keymap as cmKeymap } from "@codemirror/view";
+import { indentLess, indentMore } from "@codemirror/commands";
+import { indentUnit } from "@codemirror/language";
+import { Prec } from "@codemirror/state";
+
+// Tab in a code block: insert ONE indent unit (4 spaces) at the cursor for an
+// empty selection, or indent the lines when text is selected. Replaces both
+// Crepe's indentMore (which indents the whole line regardless of cursor) and
+// CodeMirror's insertTab (which inserts a literal, 1-press-per-2-spaces tab).
+const insertIndentAtCursor = (view: any): boolean => {
+  const { state } = view;
+  if (state.selection.ranges.some((r: any) => !r.empty)) {
+    return indentMore(view);
+  }
+  view.dispatch(
+    state.update(state.replaceSelection(state.facet(indentUnit)), {
+      scrollIntoView: true,
+      userEvent: "input",
+    })
+  );
+  return true;
+};
 import {
   clearTextInCurrentBlockCommand,
   wrapInHeadingCommand,
@@ -172,6 +194,16 @@ async function mountCrepe(markdown: string): Promise<void> {
       // matches the rest of the toolbar.
       [Crepe.Feature.CodeMirror]: {
         copyIcon: ICON_COPY,
+        // Crepe binds Tab to indentMore (indents the whole line regardless of
+        // cursor) with a 2-space step. Use a 4-space indent unit and rebind Tab
+        // to insert one indent unit at the cursor. Prec.highest so it wins over
+        // Crepe's binding; Shift-Tab still dedents by one unit.
+        extensions: [
+          indentUnit.of("    "),
+          Prec.highest(
+            cmKeymap.of([{ key: "Tab", run: insertIndentAtCursor, shift: indentLess }])
+          ),
+        ],
       },
       // Selection toolbar: add H1/H2/H3 controls (Crepe ships only bold/italic/
       // strikethrough/code/link) so heading level can be changed from the
