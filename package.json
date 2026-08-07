@@ -140,8 +140,8 @@
         },
         "richNotes.autoSaveDelay": {
           "type": "number",
-          "default": 1000,
-          "markdownDescription": "Delay in milliseconds before auto-saving a note after the last edit."
+          "default": 5000,
+          "markdownDescription": "Delay in milliseconds before auto-saving a note after you stop editing. The note is written to disk this long after your last change (each edit resets the timer)."
         },
         "richNotes.notion.autoSync": {
           "type": "boolean",
