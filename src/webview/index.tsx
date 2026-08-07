@@ -41,6 +41,7 @@ import { slashMenu } from "./slashMenu";
 import { mathRevert } from "./mathRevert";
 import { mermaidFeature } from "./mermaidBlock";
 import { sinkListItem, liftListItem } from "@milkdown/kit/prose/schema-list";
+import { TextSelection } from "@milkdown/kit/prose/state";
 import {
   lineNumbers,
   recomputeLineNumbers,
@@ -434,6 +435,77 @@ window.addEventListener(
       return;
     }
     if (handleListTab(e.shiftKey)) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    }
+  },
+  true
+);
+
+/** When the caret sits at the END of a line inside an inline-code span, there is
+ * no plain-text position after the code to land on, so ArrowRight jumps to the
+ * next block and the user is trapped typing inside the pill. This clears the
+ * active inline-code mark (caret stays put) so the next character is normal
+ * text — Notion-style: one ArrowRight steps out of the pill, a second moves on.
+ * Only fires at end-of-block with code actually active; otherwise falls through. */
+function handleExitInlineCode(): boolean {
+  if (!crepe) {
+    return false;
+  }
+  let handled = false;
+  crepe.editor.action((ctx) => {
+    const view = ctx.get(editorViewCtx);
+    if (!view.hasFocus()) {
+      return;
+    }
+    const { state } = view;
+    const sel = state.selection;
+    if (!sel.empty) {
+      return; // a range selection — let arrow collapse it normally
+    }
+    const codeMark = state.schema.marks.inlineCode;
+    if (!codeMark) {
+      return;
+    }
+    const $from = sel.$from;
+    // Only at the very end of the textblock (nothing after the code on this line).
+    if ($from.parentOffset !== $from.parent.content.size) {
+      return;
+    }
+    // Is inline code the mark that a typed character would inherit here?
+    const active = state.storedMarks ?? $from.marks();
+    if (!codeMark.isInSet(active)) {
+      return; // not in code (or already stepped out) — let ArrowRight move on
+    }
+    // ProseMirror keeps the DOM caret inside the <code> element and only applies
+    // stored marks on the next input, so clearing marks alone leaves the caret
+    // visually trapped in the pill. Insert a zero-width space (no marks) right
+    // after the code so the caret lands in a real text node OUTSIDE the pill;
+    // it's stripped from the markdown on save, so the file stays clean and the
+    // typed result is identical to having no separator.
+    const pos = $from.pos;
+    const tr = state.tr.insert(pos, state.schema.text("\u200b"));
+    tr.setSelection(TextSelection.create(tr.doc, pos + 1)).setStoredMarks([]);
+    view.dispatch(tr.scrollIntoView());
+    handled = true;
+  });
+  return handled;
+}
+
+window.addEventListener(
+  "keydown",
+  (e: KeyboardEvent) => {
+    if (
+      e.key !== "ArrowRight" ||
+      e.metaKey ||
+      e.ctrlKey ||
+      e.altKey ||
+      e.shiftKey ||
+      !crepe
+    ) {
+      return;
+    }
+    if (handleExitInlineCode()) {
       e.preventDefault();
       e.stopImmediatePropagation();
     }

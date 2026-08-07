@@ -54,6 +54,17 @@ body,
   --crepe-font-code: var(--vscode-editor-font-family, monospace);
 }
 
+/* Inline-code pill: Crepe's default has almost no horizontal breathing room, so
+ * adjacent text — and the caret when you step out of the pill with ArrowRight —
+ * sits flush against the rounded corner and reads as "inside" the pill. A small
+ * horizontal margin plus slightly roomier padding separates the pill from its
+ * neighbours. Scoped to inline code only (code blocks render via CodeMirror, not
+ * a <code> element). */
+.milkdown .editor code {
+  margin: 0 0.2em;
+  padding: 0.1em 0.4em;
+}
+
 /*
  * Flatten Crepe's heading scale toward the VS Code markdown-preview proportions,
  * so body text stays prominent relative to headings.

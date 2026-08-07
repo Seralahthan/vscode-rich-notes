@@ -113,6 +113,9 @@ export function canonicalizeForFile(md: string): string {
   let inFence = false;
   let marker = "";
   const lines = normalizeTableRows(normalizeToggles(md))
+    // Zero-width spaces are only ever inserted transiently to let the caret step
+    // out of an inline-code pill at end of line; they must never reach the file.
+    .replace(/\u200b/g, "")
     .replace(/[ \t]+$/gm, "")
     .split("\n")
     .map((l) => {
