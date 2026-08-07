@@ -39,6 +39,7 @@ import { bareLinkSync } from "./linkSync";
 import { headingContext } from "./headingContext";
 import { slashMenu } from "./slashMenu";
 import { mathRevert } from "./mathRevert";
+import { mermaidFeature } from "./mermaidBlock";
 import {
   lineNumbers,
   recomputeLineNumbers,
@@ -71,6 +72,8 @@ const ICON_FILE =
   '<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M6 2a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6H6zm7 1.5L18.5 9H13V3.5z"/></svg>';
 const ICON_COPY =
   '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg>';
+const ICON_DIAGRAM =
+  '<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M10 2h4a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v3h5a1 1 0 0 1 1 1v2h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1v-1H6v1h1a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h1v-2a1 1 0 0 1 1-1h5V7H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/></svg>';
 const ICON_TOGGLE =
   '<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M8 6l6 6-6 6V6z"/><path d="M2 4h2v16H2z" opacity="0"/></svg>';
 // "H1"/"H2"/"H3" labels for the selection toolbar's heading controls.
@@ -117,6 +120,26 @@ function insertLink(ctx: Ctx, label: string, href: string): void {
     tr.addMark(from, from + label.length, linkMark.create({ href }));
   }
   view.dispatch(tr.scrollIntoView());
+  view.focus();
+}
+
+/**
+ * Insert a Mermaid diagram block (a `mermaid` code block, seeded with a small
+ * binary-tree template so the user sees a rendered diagram immediately). It
+ * renders via the code block's preview (see mermaidBlock.ts) and stays a clean
+ * ` ```mermaid ` fence in the markdown.
+ */
+function insertMermaid(ctx: Ctx): void {
+  ctx.get(commandsCtx).call(clearTextInCurrentBlockCommand.key);
+  const view = ctx.get(editorViewCtx);
+  const { state } = view;
+  const codeBlock = state.schema.nodes.code_block;
+  if (!codeBlock) {
+    return;
+  }
+  const template = "graph TD\n  A --> B\n  A --> C";
+  const node = codeBlock.create({ language: "mermaid" }, state.schema.text(template));
+  view.dispatch(state.tr.replaceSelectionWith(node).scrollIntoView());
   view.focus();
 }
 
@@ -254,12 +277,22 @@ async function mountCrepe(markdown: string): Promise<void> {
             icon: ICON_TOGGLE,
             onRun: (ctx) => insertToggle(ctx),
           });
+          // Mermaid diagram (binary trees, flowcharts, graphs, …) — a `mermaid`
+          // code block that renders via the code-block preview (mermaidBlock.ts).
+          builder.getGroup("advanced").addItem("rn-diagram", {
+            label: "Diagram",
+            icon: ICON_DIAGRAM,
+            onRun: (ctx) => insertMermaid(ctx),
+          });
         },
       },
     },
   });
   // Custom video-embed block (renders recognized video links as a card; stays
   // clean `[url](url)` markdown).
+  // Mermaid diagrams in `mermaid` code blocks (renders via the code-block
+  // preview hook; mermaid is lazily imported on first render).
+  c.addFeature(mermaidFeature);
   c.addFeature((editor: any) => {
     editor
       .use(videoEmbedRemark)
