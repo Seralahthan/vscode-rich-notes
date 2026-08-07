@@ -40,6 +40,7 @@ import { headingContext } from "./headingContext";
 import { slashMenu } from "./slashMenu";
 import { mathRevert } from "./mathRevert";
 import { mermaidFeature } from "./mermaidBlock";
+import { sinkListItem, liftListItem } from "@milkdown/kit/prose/schema-list";
 import {
   lineNumbers,
   recomputeLineNumbers,
@@ -395,6 +396,47 @@ window.addEventListener(
     e.preventDefault();
     e.stopImmediatePropagation();
     runHistory(isUndo ? "undo" : "redo");
+  },
+  true
+);
+
+/** Nest (Tab) or un-nest (Shift-Tab) the list item at the cursor. Returns false
+ * when the cursor isn't in a list item (or focus is elsewhere, e.g. a code
+ * block), so the event falls through to the default handling. */
+function handleListTab(shift: boolean): boolean {
+  if (!crepe) {
+    return false;
+  }
+  let handled = false;
+  crepe.editor.action((ctx) => {
+    const view = ctx.get(editorViewCtx);
+    if (!view.hasFocus()) {
+      return; // focus is in a code block or elsewhere
+    }
+    const type = view.state.schema.nodes.list_item;
+    if (!type) {
+      return;
+    }
+    const command = shift ? liftListItem(type) : sinkListItem(type);
+    handled = command(view.state, view.dispatch);
+  });
+  return handled;
+}
+
+// Tab / Shift-Tab in a list item nests / un-nests the WHOLE item (Notion-style
+// nested bullets), instead of Crepe's indent plugin merely indenting the item's
+// text. Capture phase + stopImmediatePropagation so this runs before the indent
+// plugin's Tab; when not in a list it does nothing and Tab falls through.
+window.addEventListener(
+  "keydown",
+  (e: KeyboardEvent) => {
+    if (e.key !== "Tab" || e.metaKey || e.ctrlKey || e.altKey || !crepe) {
+      return;
+    }
+    if (handleListTab(e.shiftKey)) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    }
   },
   true
 );
