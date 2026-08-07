@@ -401,40 +401,88 @@ window.addEventListener(
   true
 );
 
-/** Nest (Tab) or un-nest (Shift-Tab) the list item at the cursor. Returns false
- * when the cursor isn't in a list item (or focus is elsewhere, e.g. a code
- * block), so the event falls through to the default handling. */
-function handleListTab(shift: boolean): boolean {
+// One level of paragraph indentation. Markdown has no literal-space paragraph
+// indent (1–3 leading spaces are ignored, 4+ become a code block), so we indent
+// with NON-BREAKING spaces: they render as an indent, still let inline code and
+// equations parse, and round-trip through the .md without turning the line into
+// a code block. Four per Tab press.
+const PARA_INDENT = "\u00a0\u00a0\u00a0\u00a0";
+
+/** True if the cursor sits inside a list item at any ancestor depth. */
+function selectionInListItem(state: any): boolean {
+  const $from = state.selection.$from;
+  for (let d = $from.depth; d > 0; d--) {
+    if ($from.node(d).type.name === "list_item") {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Indent (Tab) or outdent (Shift-Tab) the current paragraph/heading by one
+ * level of leading non-breaking spaces. */
+function indentBlock(view: any, shift: boolean): void {
+  const { state } = view;
+  const $from = state.selection.$from;
+  const start = $from.start(); // first position inside the current textblock
+  if (shift) {
+    // Remove up to one level of leading NBSPs.
+    const text = $from.parent.textContent;
+    let n = 0;
+    while (n < PARA_INDENT.length && text.charCodeAt(n) === 0xa0) {
+      n++;
+    }
+    if (n > 0) {
+      view.dispatch(state.tr.delete(start, start + n));
+    }
+  } else {
+    // Insert the indent as un-marked text so it never inherits e.g. a code mark.
+    view.dispatch(state.tr.insert(start, state.schema.text(PARA_INDENT)));
+  }
+}
+
+/** Handle Tab / Shift-Tab inside the ProseMirror editor. In a list item it
+ * nests (Tab) or un-nests (Shift-Tab) the whole item, Notion-style; in a
+ * paragraph/heading it indents/outdents with non-breaking spaces (see
+ * PARA_INDENT). Returns whether the ProseMirror editor had focus at all — the
+ * caller consumes the event in that case so Crepe's default Tab (which inserts
+ * literal spaces that round-trip as a code block) never runs. Returns false only
+ * when focus is elsewhere (e.g. a code block's CodeMirror), so Tab reaches it. */
+function handleEditorTab(shift: boolean): boolean {
   if (!crepe) {
     return false;
   }
-  let handled = false;
+  let pmFocused = false;
   crepe.editor.action((ctx) => {
     const view = ctx.get(editorViewCtx);
     if (!view.hasFocus()) {
-      return; // focus is in a code block or elsewhere
+      return; // focus is in a code block's CodeMirror, or outside the editor
     }
+    pmFocused = true;
     const type = view.state.schema.nodes.list_item;
-    if (!type) {
-      return;
+    if (type && selectionInListItem(view.state)) {
+      // Nest / un-nest the list item (a no-op for the first item, but still
+      // consumed below rather than falling through to space insertion).
+      const command = shift ? liftListItem(type) : sinkListItem(type);
+      command(view.state, view.dispatch);
+    } else {
+      indentBlock(view, shift);
     }
-    const command = shift ? liftListItem(type) : sinkListItem(type);
-    handled = command(view.state, view.dispatch);
   });
-  return handled;
+  return pmFocused;
 }
 
-// Tab / Shift-Tab in a list item nests / un-nests the WHOLE item (Notion-style
-// nested bullets), instead of Crepe's indent plugin merely indenting the item's
-// text. Capture phase + stopImmediatePropagation so this runs before the indent
-// plugin's Tab; when not in a list it does nothing and Tab falls through.
+// Capture phase + stopImmediatePropagation so this runs before Crepe's own Tab
+// binding. When the editor is focused we always consume Tab (nesting a list item
+// or indenting a paragraph); only a focused code block lets Tab through to
+// CodeMirror for indentation.
 window.addEventListener(
   "keydown",
   (e: KeyboardEvent) => {
     if (e.key !== "Tab" || e.metaKey || e.ctrlKey || e.altKey || !crepe) {
       return;
     }
-    if (handleListTab(e.shiftKey)) {
+    if (handleEditorTab(e.shiftKey)) {
       e.preventDefault();
       e.stopImmediatePropagation();
     }
