@@ -8,15 +8,16 @@ body,
   color: var(--vscode-editor-foreground);
 }
 
-/* Let the Milkdown editor fill the pane with a comfortable page column. */
+/* Let the Milkdown editor fill the full width of the pane (no fixed reading
+ * column) so wide windows use the available space. */
 .milkdown {
   height: 100%;
   overflow: auto;
 }
 .milkdown .editor {
-  max-width: 860px;
-  margin: 0 auto;
-  padding: 24px 32px 40vh;
+  max-width: none;
+  margin: 0;
+  padding: 24px 48px 40vh;
   font-size: 15px;
 }
 
