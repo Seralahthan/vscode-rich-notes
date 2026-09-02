@@ -255,9 +255,9 @@
     "katex": "^0.16.21"
   },
   "dependencies": {
-    "@blocknote/core": "^0.47.0",
-    "@blocknote/mantine": "^0.47.0",
-    "@blocknote/react": "^0.47.0",
+    "@blocknote/core": "^0.54.0",
+    "@blocknote/mantine": "^0.54.0",
+    "@blocknote/react": "^0.54.0",
     "@notionhq/client": "^5.22.0",
     "@tryfabric/martian": "^1.2.4",
     "notion-to-md": "^3.1.9",
